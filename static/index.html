@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mos-GSM AI — Ассистент СКУД & СВН</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect rx='6' width='32' height='32' fill='%231A1A1A'/><rect x='4' y='22' width='4' height='4' rx='1' fill='%23F3C04D'/><rect x='10' y='18' width='4' height='8' rx='1' fill='%23F3C04D'/><rect x='16' y='12' width='4' height='14' rx='1' fill='%23F3C04D'/><rect x='22' y='6' width='4' height='20' rx='1' fill='%23F3C04D'/></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto+Condensed:wght@300;400;700&family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#111111;--bg2:#1A1A1A;--bg3:#252525;--bg4:#303030;
+  --accent:#F3C04D;--accent2:#D4A53A;--accent-dim:rgba(243,192,77,.1);
+  --text:#E8E8E8;--text2:#9A9A9A;--text3:#4D4D4D;
+  --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
+  --radius:12px;--radius-sm:8px;
+}
+body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+
+/* Layout */
+.app{display:grid;grid-template-columns:280px 1fr;height:100vh}
+
+/* Sidebar */
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px}
+.sidebar-header{display:flex;align-items:center;gap:10px;padding:8px 4px 20px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.logo-mark{width:36px;height:36px;border-radius:10px;background:var(--bg);display:flex;align-items:flex-end;justify-content:center;gap:2px;padding-bottom:6px}
+.logo-mark i{display:block;width:4px;border-radius:1.5px;background:var(--accent)}
+.logo-mark i:nth-child(1){height:4px}
+.logo-mark i:nth-child(2){height:8px}
+.logo-mark i:nth-child(3){height:13px}
+.logo-mark i:nth-child(4){height:18px}
+.logo-text{font-size:17px;font-weight:700;letter-spacing:-.3px;font-family:'Roboto',sans-serif}
+.logo-text span{color:var(--accent)}
+.new-chat-btn{width:100%;padding:10px;border-radius:var(--radius-sm);border:1px dashed var(--border2);background:transparent;color:var(--text2);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px}
+.new-chat-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.chat-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.chat-list::-webkit-scrollbar{width:4px}
+.chat-list::-webkit-scrollbar-thumb{background:var(--text3);border-radius:2px}
+.chat-item{padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:.15s;font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
+.chat-item:hover{background:var(--bg3);color:var(--text)}
+.chat-item.active{background:var(--accent-dim);color:var(--accent)}
+.chat-item .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.sidebar-footer{padding-top:12px;border-top:1px solid var(--border);margin-top:12px;font-size:12px;color:var(--text3);text-align:center;line-height:1.5}
+.sidebar-footer a{color:var(--accent);text-decoration:none}
+
+/* Main chat */
+.main{display:flex;flex-direction:column;height:100vh;position:relative}
+.main::before{content:'';position:absolute;top:-200px;right:-200px;width:500px;height:500px;background:radial-gradient(circle,rgba(243,192,77,.04),transparent 70%);pointer-events:none}
+
+/* Chat header */
+.chat-header{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:rgba(26,29,39,.8);backdrop-filter:blur(12px);z-index:2}
+.header-avatar{width:34px;height:34px;border-radius:10px;background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:1.5px;padding-bottom:5px}
+.header-avatar i{display:block;width:3px;border-radius:1px;background:var(--bg2)}
+.header-avatar i:nth-child(1){height:3px}
+.header-avatar i:nth-child(2){height:6px}
+.header-avatar i:nth-child(3){height:10px}
+.header-avatar i:nth-child(4){height:14px}
+.header-info h2{font-size:15px;font-weight:600}
+.header-info p{font-size:12px;color:var(--accent);display:flex;align-items:center;gap:5px}
+.header-info p::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
+.header-model{margin-left:auto;padding:5px 12px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);font-size:11px;font-weight:500;color:var(--text2);font-family:'JetBrains Mono',monospace}
+
+/* Messages area */
+.messages{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+.messages::-webkit-scrollbar{width:5px}
+.messages::-webkit-scrollbar-thumb{background:var(--text3);border-radius:3px}
+
+/* Welcome screen */
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:40px;gap:20px}
+.welcome-icon{width:72px;height:72px;border-radius:20px;background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:3px;padding-bottom:12px}
+.welcome-icon i{display:block;width:8px;border-radius:3px;background:var(--bg2)}
+.welcome-icon i:nth-child(1){height:8px}
+.welcome-icon i:nth-child(2){height:16px}
+.welcome-icon i:nth-child(3){height:26px}
+.welcome-icon i:nth-child(4){height:36px}
+.welcome h1{font-family:'Bebas Neue',sans-serif;font-size:32px;font-weight:400;letter-spacing:2px;text-transform:uppercase}
+.welcome p{color:var(--text2);font-size:15px;max-width:480px;line-height:1.6}
+.suggestions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;max-width:600px}
+.suggestion{padding:10px 18px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:13px;font-family:inherit;cursor:pointer;transition:.2s;white-space:nowrap}
+.suggestion:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+
+/* Message bubbles */
+.msg{display:flex;gap:12px;max-width:85%;animation:fadeIn .3s ease}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg-avatar{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.msg.ai .msg-avatar{background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:1px;padding-bottom:4px}
+.msg.ai .msg-avatar i{display:block;width:3px;border-radius:1px;background:var(--bg2)}
+.msg.ai .msg-avatar i:nth-child(1){height:3px}
+.msg.ai .msg-avatar i:nth-child(2){height:6px}
+.msg.ai .msg-avatar i:nth-child(3){height:9px}
+.msg.ai .msg-avatar i:nth-child(4){height:13px}
+.msg.user .msg-avatar{background:var(--bg3);border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text2)}
+.msg-body{display:flex;flex-direction:column;gap:4px}
+.msg-text{padding:14px 18px;border-radius:16px;font-size:14px;line-height:1.7}
+.msg.ai .msg-text{background:var(--bg2);border:1px solid var(--border);border-top-left-radius:4px}
+.msg.user .msg-text{background:rgba(243,192,77,.08);border:1px solid rgba(243,192,77,.18);border-top-right-radius:4px}
+
+/* Markdown rendering */
+.msg-text h1,.msg-text h2,.msg-text h3{margin:16px 0 8px;font-weight:700}
+.msg-text h2{font-size:16px}
+.msg-text h3{font-size:14px;color:var(--accent)}
+.msg-text p{margin:6px 0}
+.msg-text ul,.msg-text ol{margin:8px 0;padding-left:24px}
+.msg-text li{margin:4px 0}
+.msg-text code{background:var(--bg);padding:2px 7px;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--accent)}
+.msg-text pre{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin:10px 0;overflow-x:auto}
+.msg-text pre code{background:none;padding:0;font-size:12px;color:var(--text)}
+.msg-text strong{color:var(--accent);font-weight:600}
+.msg-text a{color:var(--accent);text-decoration:none}
+.msg-text a:hover{text-decoration:underline}
+.msg-text table{border-collapse:collapse;margin:10px 0;width:100%}
+.msg-text th,.msg-text td{padding:8px 12px;border:1px solid var(--border);font-size:13px;text-align:left}
+.msg-text th{background:var(--bg3);font-weight:600}
+.msg-text blockquote{border-left:3px solid var(--accent);padding:8px 16px;margin:10px 0;background:var(--accent-dim);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+
+.msg-time{font-size:11px;color:var(--text3);padding:0 4px}
+.msg.user .msg-time{text-align:right}
+
+/* Sources */
+.msg-sources{display:flex;flex-wrap:wrap;gap:6px;padding:0 4px}
+.source-chip{font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(243,192,77,.08);color:var(--accent);border:1px solid rgba(243,192,77,.2);font-family:'JetBrains Mono',monospace;text-decoration:none;transition:.2s}
+.source-chip:hover{background:rgba(243,192,77,.16)}
+
+/* Search indicator */
+.search-indicator{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:var(--radius-sm);background:var(--accent-dim);border:1px solid rgba(243,192,77,.15);font-size:13px;color:var(--accent);max-width:300px}
+.search-indicator .spinner{width:14px;height:14px;border:2px solid rgba(243,192,77,.3);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Typing indicator */
+.typing{display:flex;gap:4px;padding:6px 0}
+.typing span{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:typingDot 1.4s ease-in-out infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes typingDot{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+/* Input area */
+.input-area{padding:16px 24px 20px;border-top:1px solid var(--border);background:rgba(26,29,39,.6);backdrop-filter:blur(12px)}
+.input-wrap{display:flex;align-items:flex-end;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:6px;transition:.2s}
+.input-wrap:focus-within{border-color:rgba(243,192,77,.3);box-shadow:0 0 0 3px var(--accent-dim)}
+.input-wrap textarea{flex:1;background:transparent;border:none;color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;resize:none;outline:none;max-height:150px;line-height:1.5}
+.input-wrap textarea::placeholder{color:var(--text3)}
+.send-btn{width:42px;height:42px;border-radius:12px;border:none;background:var(--accent);color:var(--bg2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+.send-btn:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(243,192,77,.3)}
+.send-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.send-btn svg{width:18px;height:18px}
+.input-hint{display:flex;justify-content:space-between;margin-top:8px;padding:0 8px;font-size:11px;color:var(--text3)}
+.input-hint kbd{background:var(--bg2);padding:1px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px;border:1px solid var(--border)}
+
+/* Mobile */
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-mark"><i></i><i></i><i></i><i></i></div>
+      <div class="logo-text">Mos-<span>GSM</span></div>
+    </div>
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Новый чат
+    </button>
+    <div class="chat-list" id="chatList"></div>
+    <div class="sidebar-footer">
+      TechBase AI v1.0 · Mos-GSM<br>
+      Комплексные слаботочные системы<br>
+      <a href="https://mos-gsm.ru" target="_blank">mos-gsm.ru</a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="chat-header">
+      <div class="header-avatar"><i></i><i></i><i></i><i></i></div>
+      <div class="header-info">
+        <h2>Mos-GSM AI</h2>
+        <p>Онлайн — СКУД & СВН эксперт</p>
+      </div>
+      <div class="header-model">claude-sonnet-4.5</div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon"><i></i><i></i><i></i><i></i></div>
+        <h1>Mos-GSM AI Ассистент</h1>
+        <p>Я — AI-помощник компании Mos-GSM. Знаю всё о СКУД и СВН оборудовании — от настройки контроллеров Болид до сброса паролей Hikvision. Задайте вопрос — найду ответ с поиском актуальной информации.</p>
+        <div class="suggestions">
+          <button class="suggestion" onclick="ask(this)">Как сбросить пароль на камере Hikvision?</button>
+          <button class="suggestion" onclick="ask(this)">Схема подключения Болид С2000-2</button>
+          <button class="suggestion" onclick="ask(this)">Настройка ONVIF на Dahua</button>
+          <button class="suggestion" onclick="ask(this)">Расчёт архива на 32 камеры 2Мп на 30 дней</button>
+          <button class="suggestion" onclick="ask(this)">Совместимость считывателей PERCo с Wiegand</button>
+          <button class="suggestion" onclick="ask(this)">Настройка Sigur: интеграция с 1С</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea id="input" placeholder="Задайте вопрос по СКУД или СВН оборудованию..." rows="1" onkeydown="handleKey(event)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="send()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        <span>Mos-GSM AI · Claude + веб-поиск</span>
+        <span><kbd>Enter</kbd> отправить · <kbd>Shift+Enter</kbd> новая строка</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── State ──
+let sessionId = null;
+let isGenerating = false;
+let chatHistory = [];
+
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('sendBtn');
+const welcomeEl = document.getElementById('welcome');
+const chatListEl = document.getElementById('chatList');
+
+// ── Markdown renderer (lightweight) ──
+function renderMd(text) {
+  return text
+    // Code blocks
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Headers
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    // Blockquote
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    // Unordered lists
+    .replace(/^[•\-\*] (.+)$/gm, '<li>$1</li>')
+    // Ordered lists
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    // Wrap consecutive <li> in <ul>
+    .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+    // Line breaks
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>')
+    // Wrap in paragraph
+    .replace(/^(.+)/, '<p>$1</p>')
+    .replace(/<p><(h[123]|ul|ol|pre|blockquote)/g, '<$1')
+    .replace(/<\/(h[123]|ul|ol|pre|blockquote)><\/p>/g, '</$1>');
+}
+
+// ── Time formatter ──
+function timeNow() {
+  return new Date().toLocaleTimeString('ru', {hour:'2-digit', minute:'2-digit'});
+}
+
+// ── Add message to UI ──
+function addMessage(text, type, sources = []) {
+  if (welcomeEl) welcomeEl.style.display = 'none';
+  
+  const div = document.createElement('div');
+  div.className = `msg ${type}`;
+  
+  const avatar = type === 'ai' ? '<i></i><i></i><i></i><i></i>' : 'ВЫ';
+  const avatarClass = type === 'ai' ? '' : '';
+  
+  let sourcesHtml = '';
+  if (sources.length > 0) {
+    sourcesHtml = '<div class="msg-sources">' + 
+      sources.slice(0, 5).map(s => 
+        `<a class="source-chip" href="${s.url}" target="_blank">📎 ${s.title.substring(0, 40)}...</a>`
+      ).join('') + '</div>';
+  }
+  
+  div.innerHTML = `
+    <div class="msg-avatar">${avatar}</div>
+    <div class="msg-body">
+      <div class="msg-text">${type === 'ai' ? renderMd(text) : text}</div>
+      ${sourcesHtml}
+      <div class="msg-time">${timeNow()}</div>
+    </div>
+  `;
+  
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+// ── Add search indicator ──
+function addSearchIndicator() {
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = 'searchIndicator';
+  div.innerHTML = `
+    <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
+    <div class="msg-body">
+      <div class="search-indicator">
+        <div class="spinner"></div>
+        <span>Ищу информацию в интернете...</span>
+      </div>
+    </div>
+  `;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function removeSearchIndicator() {
+  const el = document.getElementById('searchIndicator');
+  if (el) el.remove();
+}
+
+// ── Add typing indicator ──
+function addTyping() {
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = 'typingIndicator';
+  div.innerHTML = `
+    <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
+    <div class="msg-body">
+      <div class="msg-text">
+        <div class="typing"><span></span><span></span><span></span></div>
+      </div>
+    </div>
+  `;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
+
+// ── Send message (streaming) ──
+async function send() {
+  const text = inputEl.value.trim();
+  if (!text || isGenerating) return;
+  
+  isGenerating = true;
+  sendBtn.disabled = true;
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+  
+  addMessage(text, 'user');
+  addTyping();
+  
+  try {
+    // Используем стриминг
+    const response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text, session_id: sessionId})
+    });
+    
+    removeTyping();
+    
+    if (!response.ok) {
+      const err = await response.json();
+      addMessage(`Ошибка: ${err.detail || 'Не удалось получить ответ'}`, 'ai');
+      return;
+    }
+    
+    // Создаём пустое сообщение для стриминга
+    if (welcomeEl) welcomeEl.style.display = 'none';
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'msg ai';
+    msgDiv.innerHTML = `
+      <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
+      <div class="msg-body">
+        <div class="msg-text" id="streamText"></div>
+        <div class="msg-time">${timeNow()}</div>
+      </div>
+    `;
+    messagesEl.appendChild(msgDiv);
+    
+    const streamText = document.getElementById('streamText');
+    let fullText = '';
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === 'text') {
+              fullText += data.content;
+              streamText.innerHTML = renderMd(fullText);
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            } else if (data.type === 'searching') {
+              addSearchIndicator();
+            } else if (data.type === 'search_done') {
+              removeSearchIndicator();
+            } else if (data.type === 'done') {
+              sessionId = data.session_id;
+              updateChatList(text);
+            } else if (data.type === 'error') {
+              streamText.innerHTML = renderMd(`Ошибка: ${data.content}`);
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    
+    streamText.removeAttribute('id');
+    
+  } catch (err) {
+    removeTyping();
+    addMessage(`Ошибка соединения: ${err.message}. Убедитесь, что сервер запущен.`, 'ai');
+  } finally {
+    isGenerating = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+// ── Send from suggestion ──
+function ask(el) {
+  inputEl.value = el.textContent;
+  send();
+}
+
+// ── Keyboard handler ──
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+}
+
+// ── Auto-resize textarea ──
+inputEl.addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+});
+
+// ── New chat ──
+function newChat() {
+  sessionId = null;
+  messagesEl.innerHTML = '';
+  if (welcomeEl) {
+    messagesEl.appendChild(welcomeEl);
+    welcomeEl.style.display = '';
+  } else {
+    // Recreate welcome
+    location.reload();
+  }
+  inputEl.focus();
+}
+
+// ── Update chat list in sidebar ──
+function updateChatList(firstMessage) {
+  if (!sessionId) return;
+  
+  // Check if already exists
+  const existing = document.querySelector(`.chat-item[data-id="${sessionId}"]`);
+  if (existing) return;
+  
+  const item = document.createElement('div');
+  item.className = 'chat-item active';
+  item.dataset.id = sessionId;
+  item.innerHTML = `<div class="dot"></div>${firstMessage.substring(0, 35)}${firstMessage.length > 35 ? '...' : ''}`;
+  
+  // Deactivate others
+  document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
+  
+  chatListEl.prepend(item);
+}
+
+// Focus input on load
+inputEl.focus();
+</script>
+
+</body>
+</html>
