@@ -66,18 +66,28 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .messages::-webkit-scrollbar-thumb{background:var(--text3);border-radius:3px}
 
 /* Welcome screen */
-.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:40px;gap:20px}
-.welcome-icon{width:72px;height:72px;border-radius:20px;background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:3px;padding-bottom:12px}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:40px;gap:16px}
+.welcome-icon{width:72px;height:72px;border-radius:20px;background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:3px;padding-bottom:12px;animation:iconFloat 3s ease-in-out infinite}
+@keyframes iconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .welcome-icon i{display:block;width:8px;border-radius:3px;background:#1A1A1A}
 .welcome-icon i:nth-child(1){height:8px}
 .welcome-icon i:nth-child(2){height:16px}
 .welcome-icon i:nth-child(3){height:26px}
 .welcome-icon i:nth-child(4){height:36px}
-.welcome h1{font-family:'Bebas Neue',sans-serif;font-size:32px;font-weight:400;letter-spacing:2px;text-transform:uppercase}
-.welcome p{color:var(--text2);font-size:15px;max-width:480px;line-height:1.6}
-.suggestions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;max-width:600px}
-.suggestion{padding:10px 18px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:13px;font-family:inherit;cursor:pointer;transition:.2s;white-space:nowrap}
-.suggestion:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.welcome-greeting{font-size:22px;font-weight:700;color:var(--text);font-family:'Roboto',sans-serif}
+.welcome h1{font-family:'Bebas Neue',sans-serif;font-size:28px;font-weight:400;letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin-top:-4px}
+.welcome p{color:var(--text2);font-size:14px;max-width:460px;line-height:1.6}
+.suggestions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;max-width:650px}
+.suggestion{padding:9px 16px;border-radius:20px;border:1px solid var(--border2);background:var(--bg);color:var(--text2);font-size:13px;font-family:inherit;cursor:pointer;transition:.25s;white-space:nowrap;opacity:0;animation:suggestIn .4s ease forwards}
+.suggestion:nth-child(1){animation-delay:.1s}
+.suggestion:nth-child(2){animation-delay:.18s}
+.suggestion:nth-child(3){animation-delay:.26s}
+.suggestion:nth-child(4){animation-delay:.34s}
+.suggestion:nth-child(5){animation-delay:.42s}
+.suggestion:nth-child(6){animation-delay:.5s}
+@keyframes suggestIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.suggestion:hover{border-color:var(--accent);color:#8B6914;background:rgba(212,165,58,.06);transform:translateY(-1px)}
+.suggestion .sg-icon{margin-right:4px}
 
 /* Message bubbles */
 .msg{display:flex;gap:12px;max-width:85%;animation:fadeIn .3s ease}
@@ -204,16 +214,10 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
     <div class="messages" id="messages">
       <div class="welcome" id="welcome">
         <div class="welcome-icon"><i></i><i></i><i></i><i></i></div>
+        <div class="welcome-greeting" id="welcomeGreeting"></div>
         <h1>Mos-GSM AI Ассистент</h1>
-        <p>Я — AI-помощник компании Mos-GSM. Знаю всё о СКУД и СВН оборудовании — от настройки контроллеров Болид до сброса паролей Hikvision. Задайте вопрос — найду ответ с поиском актуальной информации.</p>
-        <div class="suggestions">
-          <button class="suggestion" onclick="ask(this)">Как сбросить пароль на камере Hikvision?</button>
-          <button class="suggestion" onclick="ask(this)">Схема подключения Болид С2000-2</button>
-          <button class="suggestion" onclick="ask(this)">Настройка ONVIF на Dahua</button>
-          <button class="suggestion" onclick="ask(this)">Расчёт архива на 32 камеры 2Мп на 30 дней</button>
-          <button class="suggestion" onclick="ask(this)">Совместимость считывателей PERCo с Wiegand</button>
-          <button class="suggestion" onclick="ask(this)">Настройка Sigur: интеграция с 1С</button>
-        </div>
+        <p>Знаю всё о СКУД и СВН — от подключения контроллеров до расчёта архива. Задайте вопрос или выберите тему:</p>
+        <div class="suggestions" id="suggestions"></div>
       </div>
     </div>
 
@@ -243,6 +247,107 @@ const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
 const welcomeEl = document.getElementById('welcome');
 const chatListEl = document.getElementById('chatList');
+
+// ── Question Bank (50+ questions by category) ──
+const questionBank = [
+  // 📹 Видеонаблюдение — камеры
+  {icon:'📹', text:'Как сбросить пароль на камере Hikvision?'},
+  {icon:'📹', text:'Настройка ONVIF на Dahua IPC-HDW'},
+  {icon:'📹', text:'Как подключить камеру по PoE?'},
+  {icon:'📹', text:'Разница между H.264 и H.265+ на практике'},
+  {icon:'📹', text:'Как настроить детекцию движения на Hikvision?'},
+  {icon:'📹', text:'Что лучше: купольная или цилиндрическая камера?'},
+  {icon:'📹', text:'Как включить ИК-подсветку на Dahua?'},
+  {icon:'📹', text:'Настройка коридорного режима 9:16 на камерах'},
+  {icon:'📹', text:'Как обновить прошивку камеры Hikvision?'},
+  {icon:'📹', text:'Подключение PTZ-камеры по RS-485'},
+  // 💾 Видеонаблюдение — регистраторы, архив
+  {icon:'💾', text:'Расчёт архива на 32 камеры 2Мп на 30 дней'},
+  {icon:'💾', text:'Какой HDD выбрать для NVR: WD Purple или Seagate SkyHawk?'},
+  {icon:'💾', text:'Сколько камер тянет NVR Hikvision DS-7616NI?'},
+  {icon:'💾', text:'Как настроить RAID на видеосервере?'},
+  {icon:'💾', text:'Расчёт архива на 16 камер 5Мп H.265 на 60 дней'},
+  {icon:'💾', text:'Как восстановить запись с повреждённого HDD?'},
+  {icon:'💾', text:'Настройка удалённого доступа к NVR через P2P'},
+  // 🔐 СКУД — контроллеры, считыватели
+  {icon:'🔐', text:'Схема подключения Болид С2000-2'},
+  {icon:'🔐', text:'Совместимость считывателей PERCo с Wiegand'},
+  {icon:'🔐', text:'Как подключить турникет PERCo к контроллеру?'},
+  {icon:'🔐', text:'Настройка Sigur: интеграция с 1С'},
+  {icon:'🔐', text:'Подключение электрозамка к С2000-2'},
+  {icon:'🔐', text:'Разница между Wiegand-26 и Wiegand-34'},
+  {icon:'🔐', text:'Как настроить антипассбэк в СКУД Болид?'},
+  {icon:'🔐', text:'Подключение считывателя Em-Marine к контроллеру'},
+  {icon:'🔐', text:'Настройка расписания доступа в PERCo-Web'},
+  {icon:'🔐', text:'Как добавить карты в контроллер Sigur?'},
+  {icon:'🔐', text:'Схема подключения PERCo CL15 с замком'},
+  {icon:'🔐', text:'Настройка двери с двумя считывателями (вход/выход)'},
+  // 🌐 Сеть, коммутация
+  {icon:'🌐', text:'Как рассчитать бюджет PoE для 24 камер?'},
+  {icon:'🌐', text:'Настройка VLAN для видеонаблюдения'},
+  {icon:'🌐', text:'Какой коммутатор выбрать для 16 IP-камер?'},
+  {icon:'🌐', text:'Максимальная длина кабеля UTP для PoE-камеры?'},
+  {icon:'🌐', text:'Как настроить Multicast для большого числа камер?'},
+  {icon:'🌐', text:'Проброс портов для удалённого доступа к NVR'},
+  {icon:'🌐', text:'Как проверить PoE на порту коммутатора?'},
+  // 🔌 Монтаж, кабели, питание
+  {icon:'🔌', text:'Как обжать RJ-45 по стандарту T-568B?'},
+  {icon:'🔌', text:'Расчёт сечения кабеля для питания 12V на 100 метров'},
+  {icon:'🔌', text:'Как правильно заземлить стойку с оборудованием?'},
+  {icon:'🔌', text:'Какой кабель использовать для RS-485 на 500 метров?'},
+  {icon:'🔌', text:'Установка грозозащиты на уличные камеры'},
+  {icon:'🔌', text:'Как подключить ИБП к системе видеонаблюдения?'},
+  // 🖥 ПО, настройка, интеграция
+  {icon:'🖥', text:'Как добавить камеру Dahua в Trassir?'},
+  {icon:'🖥', text:'Настройка RTSP-потока с камеры Hikvision'},
+  {icon:'🖥', text:'Интеграция СКУД Болид с видеонаблюдением'},
+  {icon:'🖥', text:'Как настроить отправку тревог на email?'},
+  {icon:'🖥', text:'Настройка SADP Tool для поиска камер Hikvision'},
+  {icon:'🖥', text:'Как экспортировать видео с NVR на флешку?'},
+  {icon:'🖥', text:'Подключение камер по ONVIF к стороннему ПО'},
+  // 📋 Проектирование, нормы
+  {icon:'📋', text:'Где обязательна установка СКУД по закону?'},
+  {icon:'📋', text:'Нормы размещения камер на парковке'},
+  {icon:'📋', text:'Как составить ТЗ на систему видеонаблюдения?'},
+  {icon:'📋', text:'Расчёт количества камер для склада 2000 м²'},
+  {icon:'📋', text:'Требования к видеонаблюдению в школах'},
+];
+
+// ── Dynamic welcome ──
+function initWelcome() {
+  // Greeting by time of day
+  const hour = new Date().getHours();
+  let greeting;
+  if (hour >= 5 && hour < 12) greeting = 'Доброе утро!';
+  else if (hour >= 12 && hour < 18) greeting = 'Добрый день!';
+  else greeting = 'Добрый вечер!';
+  
+  document.getElementById('welcomeGreeting').textContent = greeting;
+  
+  // Pick 6 random questions, ensuring category variety
+  const shuffled = [...questionBank].sort(() => Math.random() - 0.5);
+  const seen = new Set();
+  const picked = [];
+  for (const q of shuffled) {
+    if (picked.length >= 6) break;
+    // Try to avoid same icon more than twice
+    const count = picked.filter(p => p.icon === q.icon).length;
+    if (count < 2) {
+      picked.push(q);
+    }
+  }
+  // Fill if needed
+  while (picked.length < 6) {
+    picked.push(shuffled[picked.length]);
+  }
+  
+  const container = document.getElementById('suggestions');
+  container.innerHTML = picked.map(q => 
+    `<button class="suggestion" onclick="ask(this)"><span class="sg-icon">${q.icon}</span>${q.text}</button>`
+  ).join('');
+}
+
+initWelcome();
 
 // ── Markdown renderer (lightweight) ──
 function renderMd(text) {
@@ -516,8 +621,8 @@ function newChat() {
   if (welcomeEl) {
     messagesEl.appendChild(welcomeEl);
     welcomeEl.style.display = '';
+    initWelcome(); // refresh greeting + random questions
   } else {
-    // Recreate welcome
     location.reload();
   }
   inputEl.focus();
