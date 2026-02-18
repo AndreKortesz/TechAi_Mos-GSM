@@ -122,17 +122,32 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .source-chip{font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(212,165,58,.08);color:#8B6914;border:1px solid rgba(212,165,58,.2);font-family:'JetBrains Mono',monospace;text-decoration:none;transition:.2s}
 .source-chip:hover{background:rgba(212,165,58,.16)}
 
-/* Search indicator */
-.search-indicator{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:var(--radius-sm);background:rgba(212,165,58,.08);border:1px solid rgba(212,165,58,.18);font-size:13px;color:#8B6914;max-width:300px}
-.search-indicator .spinner{width:14px;height:14px;border:2px solid rgba(212,165,58,.3);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* Status indicator — universal */
+.status-indicator{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;max-width:380px;animation:fadeIn .3s ease}
+.status-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px}
+.status-text{display:flex;flex-direction:column;gap:2px}
+.status-text span{font-size:11px;font-weight:400;opacity:.7}
 
-/* Typing indicator */
-.typing{display:flex;gap:4px;padding:6px 0}
-.typing span{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:typingDot 1.4s ease-in-out infinite}
-.typing span:nth-child(2){animation-delay:.2s}
-.typing span:nth-child(3){animation-delay:.4s}
-@keyframes typingDot{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+/* Searching the web */
+.status-indicator.searching{background:rgba(212,165,58,.06);border:1px solid rgba(212,165,58,.15);color:#8B6914}
+.status-indicator.searching .status-icon{background:rgba(212,165,58,.12)}
+.status-indicator.searching .status-icon svg{animation:globePulse 2s ease-in-out infinite}
+@keyframes globePulse{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.1);opacity:1}}
+
+/* Search progress bar */
+.search-progress{height:2px;background:rgba(212,165,58,.15);border-radius:1px;margin-top:8px;overflow:hidden;width:100%}
+.search-progress-bar{height:100%;background:var(--accent);border-radius:1px;animation:searchSweep 2.5s ease-in-out infinite}
+@keyframes searchSweep{0%{width:0;margin-left:0}50%{width:70%;margin-left:15%}100%{width:0;margin-left:100%}}
+
+/* Thinking / generating */
+.status-indicator.thinking{background:rgba(0,0,0,.03);border:1px solid var(--border);color:var(--text2)}
+.status-indicator.thinking .status-icon{background:var(--bg3)}
+.thinking-dots{display:flex;gap:3px;align-items:center;height:16px}
+.thinking-dots i{width:4px;height:4px;border-radius:50%;background:var(--accent);animation:thinkWave 1.4s ease-in-out infinite}
+.thinking-dots i:nth-child(2){animation-delay:.15s}
+.thinking-dots i:nth-child(3){animation-delay:.3s}
+.thinking-dots i:nth-child(4){animation-delay:.45s}
+@keyframes thinkWave{0%,100%{transform:translateY(0);opacity:.3}50%{transform:translateY(-6px);opacity:1}}
 
 /* Input area */
 .input-area{padding:16px 24px 20px;border-top:1px solid var(--border);background:rgba(255,255,255,.7);backdrop-filter:blur(12px)}
@@ -302,16 +317,23 @@ function addMessage(text, type, sources = []) {
 
 // ── Add search indicator ──
 function addSearchIndicator() {
+  removeTyping(); // убираем "думает" если был
   const div = document.createElement('div');
   div.className = 'msg ai';
   div.id = 'searchIndicator';
   div.innerHTML = `
     <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
     <div class="msg-body">
-      <div class="search-indicator">
-        <div class="spinner"></div>
-        <span>Ищу информацию в интернете...</span>
+      <div class="status-indicator searching">
+        <div class="status-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </div>
+        <div class="status-text">
+          Ищу информацию в интернете...
+          <span>Проверяю актуальные источники</span>
+        </div>
       </div>
+      <div class="search-progress"><div class="search-progress-bar"></div></div>
     </div>
   `;
   messagesEl.appendChild(div);
@@ -323,7 +345,7 @@ function removeSearchIndicator() {
   if (el) el.remove();
 }
 
-// ── Add typing indicator ──
+// ── Add typing/thinking indicator ──
 function addTyping() {
   const div = document.createElement('div');
   div.className = 'msg ai';
@@ -331,8 +353,14 @@ function addTyping() {
   div.innerHTML = `
     <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
     <div class="msg-body">
-      <div class="msg-text">
-        <div class="typing"><span></span><span></span><span></span></div>
+      <div class="status-indicator thinking">
+        <div class="status-icon">
+          <div class="thinking-dots"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="status-text">
+          Формирую ответ...
+          <span>Анализирую данные</span>
+        </div>
       </div>
     </div>
   `;
