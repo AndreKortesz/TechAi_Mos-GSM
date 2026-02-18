@@ -208,7 +208,7 @@ async def chat_stream(req: ChatRequest):
                 for event in stream:
                     if hasattr(event, 'type'):
                         if event.type == 'content_block_delta':
-                            if hasattr(event.delta, 'text'):
+                            if hasattr(event.delta, 'text') and event.delta.text is not None:
                                 full_reply += event.delta.text
                                 yield f"data: {json.dumps({'type': 'text', 'content': event.delta.text})}\n\n"
                         elif event.type == 'content_block_start':
@@ -217,6 +217,8 @@ async def chat_stream(req: ChatRequest):
                                     yield f"data: {json.dumps({'type': 'searching', 'content': 'Ищу информацию...'})}\n\n"
                                 elif event.content_block.type == 'web_search_tool_result':
                                     yield f"data: {json.dumps({'type': 'search_done', 'content': 'Найдено!'})}\n\n"
+                                elif event.content_block.type == 'text':
+                                    pass  # начало текстового блока, ждём дельты
             
             # Сохраняем в историю
             messages.append({"role": "assistant", "content": full_reply})
