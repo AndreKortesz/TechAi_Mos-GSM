@@ -246,6 +246,31 @@ const chatListEl = document.getElementById('chatList');
 
 // ── Markdown renderer (lightweight) ──
 function renderMd(text) {
+  // Parse markdown tables first (before other transformations)
+  text = text.replace(/(?:^|\n)((?:\|[^\n]+\|\n)+)/g, function(match, tableBlock) {
+    const rows = tableBlock.trim().split('\n').filter(r => r.trim());
+    if (rows.length < 2) return match;
+    
+    // Check if second row is separator (|---|---|)
+    const sepRow = rows[1];
+    if (!/^\|[\s\-:]+(\|[\s\-:]+)+\|?$/.test(sepRow.trim())) return match;
+    
+    let html = '<table>';
+    
+    // Header row
+    const headers = rows[0].split('|').filter(c => c.trim() !== '');
+    html += '<thead><tr>' + headers.map(h => '<th>' + h.trim() + '</th>').join('') + '</tr></thead>';
+    
+    // Data rows
+    html += '<tbody>';
+    for (let i = 2; i < rows.length; i++) {
+      const cells = rows[i].split('|').filter(c => c.trim() !== '');
+      html += '<tr>' + cells.map(c => '<td>' + c.trim() + '</td>').join('') + '</tr>';
+    }
+    html += '</tbody></table>';
+    return '\n' + html + '\n';
+  });
+  
   return text
     // Code blocks
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
