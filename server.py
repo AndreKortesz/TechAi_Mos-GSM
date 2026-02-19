@@ -140,11 +140,10 @@ async def init_db():
     try:
         db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
         async with db_pool.acquire() as conn:
+            # Create tables
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS chat_sessions (
                     id TEXT PRIMARY KEY,
-                    user_id TEXT DEFAULT '',
-                    user_name TEXT DEFAULT '',
                     title TEXT DEFAULT '',
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -157,12 +156,19 @@ async def init_db():
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id);
-                CREATE INDEX IF NOT EXISTS idx_sessions_user ON chat_sessions(user_id);
             ''')
-            # Migration: add columns if missing
+            # Migration: add new columns
+            for col in [
+                "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT ''",
+                "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_name TEXT DEFAULT ''",
+            ]:
+                try:
+                    await conn.execute(col)
+                except:
+                    pass
+            # Index on user_id (after column exists)
             try:
-                await conn.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT ''")
-                await conn.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_name TEXT DEFAULT ''")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON chat_sessions(user_id)")
             except:
                 pass
         print("✅ PostgreSQL подключена, таблицы готовы")
