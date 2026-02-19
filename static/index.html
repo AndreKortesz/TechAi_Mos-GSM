@@ -194,9 +194,10 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
     </button>
     <div class="chat-list" id="chatList"></div>
     <div class="sidebar-footer">
-      TechBase AI v1.0 · Mos-GSM<br>
-      Комплексные слаботочные системы<br>
-      <a href="https://mos-gsm.ru" target="_blank">mos-gsm.ru</a>
+      <div id="userInfo" style="margin-bottom:6px;font-weight:500;color:#1A1A1A"></div>
+      <a href="/auth/logout" style="color:#C9982E;text-decoration:none;font-size:11px">Выйти</a>
+      <br>
+      <span style="margin-top:4px;display:inline-block">TechBase AI v1.0 · <a href="https://mos-gsm.ru" target="_blank">mos-gsm.ru</a></span>
     </div>
   </aside>
 
@@ -845,6 +846,7 @@ function updateChatList(firstMessage) {
 async function loadSessions() {
   try {
     const res = await fetch('/api/sessions');
+    if (res.status === 401) { window.location.href = '/login'; return; }
     if (!res.ok) return;
     const sessions = await res.json();
     chatListEl.innerHTML = '';
@@ -860,6 +862,20 @@ async function loadSessions() {
   } catch(e) { console.error('Failed to load sessions:', e); }
 }
 
+// ── Load current user ──
+async function loadUser() {
+  try {
+    const res = await fetch('/auth/me');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    if (res.ok) {
+      const user = await res.json();
+      const el = document.getElementById('userInfo');
+      if (el) el.textContent = user.name || user.email || '';
+    }
+  } catch(e) {}
+}
+
+loadUser();
 loadSessions();
 
 // Focus input on load
