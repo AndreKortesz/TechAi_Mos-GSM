@@ -241,6 +241,7 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 let sessionId = null;
 let isGenerating = false;
 let chatHistory = [];
+const chatStore = {}; // {sessionId: [{type:'user'|'ai', text, sources}]}
 
 const messagesEl = document.getElementById('messages');
 const inputEl = document.getElementById('input');
@@ -561,14 +562,19 @@ function timeNow() {
 }
 
 // ── Add message to UI ──
-function addMessage(text, type, sources = []) {
+function addMessage(text, type, sources = [], skipStore = false) {
   if (welcomeEl) welcomeEl.style.display = 'none';
+  
+  // Save to local store
+  if (!skipStore && sessionId) {
+    if (!chatStore[sessionId]) chatStore[sessionId] = [];
+    chatStore[sessionId].push({type, text, sources});
+  }
   
   const div = document.createElement('div');
   div.className = `msg ${type}`;
   
   const avatar = type === 'ai' ? '<i></i><i></i><i></i><i></i>' : 'ВЫ';
-  const avatarClass = type === 'ai' ? '' : '';
   
   let sourcesHtml = '';
   if (sources.length > 0) {
@@ -720,6 +726,10 @@ async function send() {
               removeSearchIndicator();
             } else if (data.type === 'done') {
               sessionId = data.session_id;
+              // Save both messages to store
+              if (!chatStore[sessionId]) chatStore[sessionId] = [];
+              chatStore[sessionId].push({type:'user', text, sources:[]});
+              chatStore[sessionId].push({type:'ai', text:fullText, sources:[]});
               updateChatList(text);
             } else if (data.type === 'error') {
               streamText.innerHTML = renderMd(`Ошибка: ${data.content}`);
@@ -768,10 +778,32 @@ function newChat() {
   if (welcomeEl) {
     messagesEl.appendChild(welcomeEl);
     welcomeEl.style.display = '';
-    initWelcome(); // refresh greeting + random questions
+    initWelcome();
   } else {
     location.reload();
   }
+  // Deactivate all sidebar items
+  document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
+  inputEl.focus();
+}
+
+// ── Switch to existing chat ──
+function switchChat(sid) {
+  if (sid === sessionId || isGenerating) return;
+  
+  sessionId = sid;
+  messagesEl.innerHTML = '';
+  if (welcomeEl) welcomeEl.style.display = 'none';
+  
+  // Highlight active
+  document.querySelectorAll('.chat-item').forEach(c => {
+    c.classList.toggle('active', c.dataset.id === sid);
+  });
+  
+  // Restore messages from store
+  const msgs = chatStore[sid] || [];
+  msgs.forEach(m => addMessage(m.text, m.type, m.sources || [], true));
+  
   inputEl.focus();
 }
 
@@ -787,9 +819,14 @@ function updateChatList(firstMessage) {
   item.className = 'chat-item active';
   item.dataset.id = sessionId;
   item.innerHTML = `<div class="dot"></div>${firstMessage.substring(0, 35)}${firstMessage.length > 35 ? '...' : ''}`;
+  item.onclick = () => switchChat(sessionId);
   
   // Deactivate others
   document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
+  
+  // Capture sessionId for closure
+  const sid = sessionId;
+  item.onclick = () => switchChat(sid);
   
   chatListEl.prepend(item);
 }
