@@ -1,9 +1,9 @@
 """
 TechBase — AI-ассистент по СКУД и СВН
-Backend: FastAPI + Claude API + Web Search
+Backend: FastAPI + Claude API + Web Search + PostgreSQL
 
 Деплой: GitHub → Railway
-Переменные окружения в Railway: ANTHROPIC_API_KEY
+Переменные окружения в Railway: ANTHROPIC_API_KEY, DATABASE_URL
 """
 
 import os
@@ -11,12 +11,14 @@ import json
 import uuid
 from datetime import datetime
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import anthropic
+import asyncpg
 
 # ── Config ──
 API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -93,11 +95,54 @@ SYSTEM_PROMPT = """Ты — TechBase AI, экспертный техническ
 - Всегда указывай источник информации
 """
 
-# ── In-memory chat storage (в проде заменить на PostgreSQL/Redis) ──
-chat_sessions: dict = {}
+# ── In-memory fallback + PostgreSQL ──
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+db_pool = None
+chat_sessions: dict = {}  # Fallback if no DB
+
+async def init_db():
+    """Create tables if they don't exist"""
+    global db_pool
+    if not DATABASE_URL:
+        print("⚠️  DATABASE_URL не задан — используется in-memory хранение")
+        return
+    try:
+        db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        async with db_pool.acquire() as conn:
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT DEFAULT '',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    session_id TEXT REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id);
+            ''')
+        print("✅ PostgreSQL подключена, таблицы готовы")
+    except Exception as e:
+        print(f"❌ Ошибка подключения к PostgreSQL: {e}")
+        print("⚠️  Используется in-memory хранение")
+
+async def close_db():
+    global db_pool
+    if db_pool:
+        await db_pool.close()
+
+@asynccontextmanager
+async def lifespan(app):
+    await init_db()
+    yield
+    await close_db()
 
 # ── FastAPI App ──
-app = FastAPI(title="TechBase AI", version="1.0")
+app = FastAPI(title="TechBase AI", version="1.0", lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     message: str
@@ -108,15 +153,57 @@ class ChatResponse(BaseModel):
     session_id: str
     sources: list[dict] = []
 
-def get_or_create_session(session_id: Optional[str] = None) -> tuple[str, list]:
-    if session_id and session_id in chat_sessions:
-        return session_id, chat_sessions[session_id]["messages"]
-    new_id = str(uuid.uuid4())[:8]
-    chat_sessions[new_id] = {
-        "messages": [],
-        "created_at": datetime.now().isoformat()
-    }
-    return new_id, chat_sessions[new_id]["messages"]
+async def get_or_create_session(session_id: Optional[str] = None) -> tuple[str, list]:
+    """Get existing session or create new one. Returns (session_id, messages_list)"""
+    
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            if session_id:
+                # Check if exists
+                row = await conn.fetchrow('SELECT id FROM chat_sessions WHERE id=$1', session_id)
+                if row:
+                    # Load messages
+                    rows = await conn.fetch(
+                        'SELECT role, content FROM chat_messages WHERE session_id=$1 ORDER BY id',
+                        session_id
+                    )
+                    messages = [{"role": r['role'], "content": r['content']} for r in rows]
+                    return session_id, messages
+            
+            # Create new session
+            new_id = str(uuid.uuid4())[:8]
+            await conn.execute(
+                'INSERT INTO chat_sessions (id, created_at, updated_at) VALUES ($1, NOW(), NOW())',
+                new_id
+            )
+            return new_id, []
+    else:
+        # In-memory fallback
+        if session_id and session_id in chat_sessions:
+            return session_id, chat_sessions[session_id]["messages"]
+        new_id = str(uuid.uuid4())[:8]
+        chat_sessions[new_id] = {"messages": [], "created_at": datetime.now().isoformat()}
+        return new_id, chat_sessions[new_id]["messages"]
+
+async def save_message(session_id: str, role: str, content: str, title: str = None):
+    """Save a message to DB"""
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO chat_messages (session_id, role, content) VALUES ($1, $2, $3)',
+                session_id, role, content
+            )
+            # Update session timestamp and title
+            if title:
+                await conn.execute(
+                    'UPDATE chat_sessions SET updated_at=NOW(), title=$2 WHERE id=$1',
+                    session_id, title[:80]
+                )
+            else:
+                await conn.execute(
+                    'UPDATE chat_sessions SET updated_at=NOW() WHERE id=$1',
+                    session_id
+                )
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
@@ -125,12 +212,13 @@ async def chat(req: ChatRequest):
     if not API_KEY:
         raise HTTPException(500, "ANTHROPIC_API_KEY не настроен. Установите переменную окружения.")
     
-    session_id, messages = get_or_create_session(req.session_id)
+    session_id, messages = await get_or_create_session(req.session_id)
     
     # Добавляем сообщение пользователя
     messages.append({"role": "user", "content": req.message})
+    await save_message(session_id, "user", req.message, title=req.message)
     
-    # Ограничиваем историю последними 20 сообщениями (экономия токенов)
+    # Ограничиваем историю последними 20 сообщениями
     recent_messages = messages[-20:]
     
     client = anthropic.Anthropic(api_key=API_KEY)
@@ -145,14 +233,13 @@ async def chat(req: ChatRequest):
                 {
                     "type": "web_search_20250305",
                     "name": "web_search",
-                    "max_uses": 5  # До 5 поисков за один ответ
+                    "max_uses": 5
                 }
             ]
         )
     except anthropic.APIError as e:
         raise HTTPException(500, f"Ошибка Claude API: {str(e)}")
     
-    # Извлекаем текст ответа и источники
     reply_text = ""
     sources = []
     
@@ -160,33 +247,30 @@ async def chat(req: ChatRequest):
         if block.type == "text":
             reply_text += block.text
         elif block.type == "web_search_tool_result":
-            # Собираем источники из результатов поиска
             if hasattr(block, 'content'):
                 for result in block.content:
                     if hasattr(result, 'url') and hasattr(result, 'title'):
-                        sources.append({
-                            "url": result.url,
-                            "title": result.title
-                        })
+                        sources.append({"url": result.url, "title": result.title})
     
-    # Сохраняем ответ в историю
+    # Сохраняем ответ
     messages.append({"role": "assistant", "content": reply_text})
+    await save_message(session_id, "assistant", reply_text)
     
-    return ChatResponse(
-        reply=reply_text,
-        session_id=session_id,
-        sources=sources
-    )
+    return ChatResponse(reply=reply_text, session_id=session_id, sources=sources)
 
 @app.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest):
-    """Стриминг ответа — текст появляется по мере генерации (как в claude.ai)"""
+    """Стриминг ответа — текст появляется по мере генерации"""
     
     if not API_KEY:
         raise HTTPException(500, "ANTHROPIC_API_KEY не настроен")
     
-    session_id, messages = get_or_create_session(req.session_id)
+    session_id, messages = await get_or_create_session(req.session_id)
     messages.append({"role": "user", "content": req.message})
+    
+    # Save user message to DB
+    await save_message(session_id, "user", req.message, title=req.message)
+    
     recent_messages = messages[-20:]
     
     client = anthropic.Anthropic(api_key=API_KEY)
@@ -220,9 +304,10 @@ async def chat_stream(req: ChatRequest):
                                 elif event.content_block.type == 'web_search_tool_result':
                                     yield f"data: {json.dumps({'type': 'search_done', 'content': 'Найдено!'})}\n\n"
                                 elif event.content_block.type == 'text':
-                                    pass  # начало текстового блока, ждём дельты
+                                    pass
             
-            # Сохраняем в историю
+            # Save assistant reply to DB
+            await save_message(session_id, "assistant", full_reply)
             messages.append({"role": "assistant", "content": full_reply})
             yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
             
@@ -234,22 +319,64 @@ async def chat_stream(req: ChatRequest):
 @app.get("/api/sessions")
 async def list_sessions():
     """Список всех сессий чата"""
-    return {
-        sid: {
-            "created_at": data["created_at"],
-            "message_count": len(data["messages"]),
-            "last_message": data["messages"][-1]["content"][:80] if data["messages"] else ""
-        }
-        for sid, data in chat_sessions.items()
-    }
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT s.id, s.title, s.created_at, s.updated_at,
+                   (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as msg_count
+                   FROM chat_sessions s ORDER BY s.updated_at DESC LIMIT 50'''
+            )
+            return [
+                {
+                    "id": r['id'],
+                    "title": r['title'] or "Новый чат",
+                    "created_at": r['created_at'].isoformat(),
+                    "updated_at": r['updated_at'].isoformat(),
+                    "message_count": r['msg_count']
+                }
+                for r in rows
+            ]
+    else:
+        return [
+            {"id": sid, "title": data["messages"][0]["content"][:80] if data["messages"] else "Новый чат",
+             "created_at": data["created_at"], "message_count": len(data["messages"])}
+            for sid, data in chat_sessions.items()
+        ]
+
+@app.get("/api/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str):
+    """Получить все сообщения сессии"""
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                'SELECT role, content, created_at FROM chat_messages WHERE session_id=$1 ORDER BY id',
+                session_id
+            )
+            if not rows:
+                raise HTTPException(404, "Сессия не найдена")
+            return [
+                {"role": r['role'], "content": r['content'], "time": r['created_at'].strftime('%H:%M')}
+                for r in rows
+            ]
+    else:
+        if session_id in chat_sessions:
+            return [{"role": m['role'], "content": m['content'], "time": ""} for m in chat_sessions[session_id]["messages"]]
+        raise HTTPException(404, "Сессия не найдена")
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Удалить сессию"""
-    if session_id in chat_sessions:
-        del chat_sessions[session_id]
-        return {"status": "deleted"}
-    raise HTTPException(404, "Сессия не найдена")
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            result = await conn.execute('DELETE FROM chat_sessions WHERE id=$1', session_id)
+            if result == 'DELETE 0':
+                raise HTTPException(404, "Сессия не найдена")
+            return {"status": "deleted"}
+    else:
+        if session_id in chat_sessions:
+            del chat_sessions[session_id]
+            return {"status": "deleted"}
+        raise HTTPException(404, "Сессия не найдена")
 
 # Раздаём фронтенд
 @app.get("/")

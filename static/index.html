@@ -787,8 +787,8 @@ function newChat() {
   inputEl.focus();
 }
 
-// ── Switch to existing chat ──
-function switchChat(sid) {
+// ── Switch to existing chat (load from API) ──
+async function switchChat(sid) {
   if (sid === sessionId || isGenerating) return;
   
   sessionId = sid;
@@ -800,9 +800,23 @@ function switchChat(sid) {
     c.classList.toggle('active', c.dataset.id === sid);
   });
   
-  // Restore messages from store
-  const msgs = chatStore[sid] || [];
-  msgs.forEach(m => addMessage(m.text, m.type, m.sources || [], true));
+  // Try local store first, then API
+  if (chatStore[sid] && chatStore[sid].length > 0) {
+    chatStore[sid].forEach(m => addMessage(m.text, m.type, m.sources || [], true));
+  } else {
+    try {
+      const res = await fetch(`/api/sessions/${sid}/messages`);
+      if (res.ok) {
+        const msgs = await res.json();
+        msgs.forEach(m => {
+          const type = m.role === 'user' ? 'user' : 'ai';
+          addMessage(m.content, type, [], true);
+        });
+        // Cache locally
+        chatStore[sid] = msgs.map(m => ({type: m.role === 'user' ? 'user' : 'ai', text: m.content, sources: []}));
+      }
+    } catch(e) { console.error('Failed to load chat:', e); }
+  }
   
   inputEl.focus();
 }
@@ -811,7 +825,6 @@ function switchChat(sid) {
 function updateChatList(firstMessage) {
   if (!sessionId) return;
   
-  // Check if already exists
   const existing = document.querySelector(`.chat-item[data-id="${sessionId}"]`);
   if (existing) return;
   
@@ -819,17 +832,35 @@ function updateChatList(firstMessage) {
   item.className = 'chat-item active';
   item.dataset.id = sessionId;
   item.innerHTML = `<div class="dot"></div>${firstMessage.substring(0, 35)}${firstMessage.length > 35 ? '...' : ''}`;
-  item.onclick = () => switchChat(sessionId);
   
-  // Deactivate others
   document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
   
-  // Capture sessionId for closure
   const sid = sessionId;
   item.onclick = () => switchChat(sid);
   
   chatListEl.prepend(item);
 }
+
+// ── Load sessions from API on page load ──
+async function loadSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    if (!res.ok) return;
+    const sessions = await res.json();
+    chatListEl.innerHTML = '';
+    sessions.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'chat-item';
+      item.dataset.id = s.id;
+      const title = s.title || 'Новый чат';
+      item.innerHTML = `<div class="dot"></div>${title.substring(0, 35)}${title.length > 35 ? '...' : ''}`;
+      item.onclick = () => switchChat(s.id);
+      chatListEl.appendChild(item);
+    });
+  } catch(e) { console.error('Failed to load sessions:', e); }
+}
+
+loadSessions();
 
 // Focus input on load
 inputEl.focus();
