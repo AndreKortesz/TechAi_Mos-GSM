@@ -780,22 +780,28 @@ def generate_kp_pdf_file(kp_data: dict, legal_entity: dict, kp_number: str, pdf_
     
     # Путь к картинкам
     stamps_dir = Path(__file__).parent / "static" / "stamps"
+    fonts_dir = Path(__file__).parent / "static" / "fonts"
     
     # Создаём PDF
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Добавляем шрифт DejaVu для кириллицы
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    # Добавляем шрифт DejaVu для кириллицы (сначала из проекта, потом из системы)
+    font_path = fonts_dir / "DejaVuSans.ttf"
+    font_path_bold = fonts_dir / "DejaVuSans-Bold.ttf"
     
-    if os.path.exists(font_path):
-        pdf.add_font("DejaVu", "", font_path, uni=True)
-        pdf.add_font("DejaVu", "B", font_path_bold, uni=True)
+    # Fallback на системные шрифты
+    if not font_path.exists():
+        font_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+        font_path_bold = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+    
+    if font_path.exists():
+        pdf.add_font("DejaVu", "", str(font_path))
+        pdf.add_font("DejaVu", "B", str(font_path_bold))
         font_name = "DejaVu"
     else:
-        font_name = "Helvetica"
+        raise Exception("Шрифт DejaVu не найден! Кириллица не будет работать.")
     
     # Цвета
     yellow = (212, 165, 58)
