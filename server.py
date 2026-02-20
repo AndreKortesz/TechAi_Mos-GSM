@@ -10,13 +10,16 @@ import os
 import json
 import uuid
 import secrets
+import base64
+import subprocess
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 import anthropic
@@ -127,6 +130,137 @@ SYSTEM_PROMPT = """Ты — TechBase AI, экспертный техническ
 - В конце добавь: "Приблизительный расчёт. Для точных данных используйте калькулятор производителя."
 """
 
+# ── Юридические лица ──
+LEGAL_ENTITIES = {
+    "ip_kontorin": {
+        "id": "ip_kontorin",
+        "name": "ИП Конторин А.В.",
+        "full_name": "Индивидуальный предприниматель Конторин Андрей Валентинович",
+        "inn": "502498623314",
+        "address": "143423, Московская область, Красногорский район, п. Истра, д. 18, кв. 31",
+        "phone": "+7 (499) 393-34-42",
+        "bank": "АО \"ТБанк\"",
+        "bik": "044525974",
+        "corr_account": "30101810145250000974",
+        "account": "40802810100000405964",
+        "vat": None,  # Без НДС
+        "signer": "Конторин А.В.",
+        "signer_title": "Предприниматель",
+        "logo": "logo_mosgsm.png",
+        "stamp": "stamp_ip_kontorin.png",
+        "sign": "sign_ip_kontorin.png"
+    },
+    "ooo_infinity": {
+        "id": "ooo_infinity",
+        "name": "ООО \"Инфинити Буст\"",
+        "full_name": "Общество с ограниченной ответственностью \"Инфинити Буст\"",
+        "inn": "5024206433",
+        "kpp": "502401001",
+        "address": "143402, Московская область, г.о. Красногорск, г Красногорск, пер Железнодорожный, дом 7, помещение 32",
+        "phone": "+7 (499) 393-34-42",
+        "bank": "ООО \"Банк Точка\"",
+        "bik": "044525104",
+        "corr_account": "30101810745374525104",
+        "account": "40702810020000044948",
+        "vat": 22,  # НДС 22%
+        "signer": "Конторин А. В.",
+        "signer_title": "Предприниматель",
+        "logo": "logo_infinity.png",
+        "stamp": "stamp_ooo_infinity.png",
+        "sign": "sign_ooo_infinity.png"
+    },
+    "ip_timofeev": {
+        "id": "ip_timofeev",
+        "name": "ИП Тимофеев Д.Д.",
+        "full_name": "Индивидуальный предприниматель Тимофеев Денис Дмитриевич",
+        "inn": "502482648754",
+        "address": "143406, Московская область, г.о. Красногорск, г Красногорск, ул Циолковского, д. 4, кв. 88",
+        "phone": "+7 (495) 414-11-53",
+        "bank": "",
+        "bik": "",
+        "corr_account": "",
+        "account": "",
+        "vat": None,  # Без НДС
+        "signer": "Тимофеев Д.Д.",
+        "signer_title": "Предприниматель",
+        "logo": "logo_mosgsm.png",
+        "stamp": "stamp_ip_timofeev.png",
+        "sign": "sign_ip_timofeev.png"
+    }
+}
+
+# ── Tool для генерации КП ──
+KP_TOOL = {
+    "name": "generate_kp",
+    "description": """Генерирует коммерческое предложение (КП) в формате PDF.
+    
+Используй этот инструмент когда менеджер просит:
+- составить КП / коммерческое предложение
+- сделать смету / расчёт для клиента
+- подготовить предложение на оборудование и работы
+
+ВАЖНО: Перед вызовом уточни у менеджера:
+1. От какого юрлица выставлять (ИП Конторин, ООО Инфинити Буст, ИП Тимофеев)
+2. Название клиента (покупателя)
+3. Список оборудования с ценами
+4. Список работ с ценами""",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "legal_entity_id": {
+                "type": "string",
+                "enum": ["ip_kontorin", "ooo_infinity", "ip_timofeev"],
+                "description": "ID юрлица поставщика"
+            },
+            "client_name": {
+                "type": "string",
+                "description": "Название клиента (покупателя)"
+            },
+            "client_contact": {
+                "type": "string",
+                "description": "Контакт клиента (телефон, email) - опционально"
+            },
+            "object_address": {
+                "type": "string",
+                "description": "Адрес объекта - опционально"
+            },
+            "materials": {
+                "type": "array",
+                "description": "Список материалов/оборудования",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Наименование"},
+                        "quantity": {"type": "number", "description": "Количество"},
+                        "unit": {"type": "string", "description": "Единица измерения (шт, м, компл)"},
+                        "price": {"type": "number", "description": "Цена за единицу"}
+                    },
+                    "required": ["name", "quantity", "unit", "price"]
+                }
+            },
+            "works": {
+                "type": "array",
+                "description": "Список работ",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Наименование работы"},
+                        "quantity": {"type": "number", "description": "Количество"},
+                        "unit": {"type": "string", "description": "Единица измерения"},
+                        "price": {"type": "number", "description": "Цена за единицу"}
+                    },
+                    "required": ["name", "quantity", "unit", "price"]
+                }
+            },
+            "validity_days": {
+                "type": "integer",
+                "description": "Срок актуальности КП в рабочих днях (по умолчанию 14)"
+            }
+        },
+        "required": ["legal_entity_id", "client_name", "materials", "works"]
+    }
+}
+
 # ── Database ──
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 db_pool = None
@@ -156,6 +290,21 @@ async def init_db():
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id);
+                
+                CREATE TABLE IF NOT EXISTS kp_documents (
+                    id SERIAL PRIMARY KEY,
+                    kp_number TEXT UNIQUE NOT NULL,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT,
+                    legal_entity_id TEXT NOT NULL,
+                    client_name TEXT NOT NULL,
+                    data JSONB NOT NULL,
+                    total_materials NUMERIC,
+                    total_works NUMERIC,
+                    total NUMERIC,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_kp_user ON kp_documents(user_id);
             ''')
             # Migration: add new columns
             for col in [
@@ -376,6 +525,428 @@ async def save_message(session_id: str, role: str, content: str, title: str = No
             else:
                 await conn.execute('UPDATE chat_sessions SET updated_at=NOW() WHERE id=$1', session_id)
 
+# ── KP Generation ──
+def num_to_words(num: float) -> str:
+    """Конвертирует число в слова (рубли)"""
+    units = ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять']
+    teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 
+             'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать']
+    tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 
+            'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто']
+    hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 
+                'шестьсот', 'семьсот', 'восемьсот', 'девятьсот']
+    
+    def three_digits(n, feminine=False):
+        result = []
+        if n >= 100:
+            result.append(hundreds[n // 100])
+            n %= 100
+        if 10 <= n < 20:
+            result.append(teens[n - 10])
+            return ' '.join(result)
+        if n >= 10:
+            result.append(tens[n // 10])
+            n %= 10
+        if n > 0:
+            if feminine and n in [1, 2]:
+                result.append(['', 'одна', 'две'][n])
+            else:
+                result.append(units[n])
+        return ' '.join(result)
+    
+    num = int(num)
+    if num == 0:
+        return "ноль рублей 00 копеек"
+    
+    result = []
+    
+    # Миллионы
+    if num >= 1000000:
+        millions = num // 1000000
+        word = three_digits(millions)
+        if millions % 10 == 1 and millions % 100 != 11:
+            result.append(f"{word} миллион")
+        elif 2 <= millions % 10 <= 4 and not (12 <= millions % 100 <= 14):
+            result.append(f"{word} миллиона")
+        else:
+            result.append(f"{word} миллионов")
+        num %= 1000000
+    
+    # Тысячи
+    if num >= 1000:
+        thousands = num // 1000
+        word = three_digits(thousands, feminine=True)
+        if thousands % 10 == 1 and thousands % 100 != 11:
+            result.append(f"{word} тысяча")
+        elif 2 <= thousands % 10 <= 4 and not (12 <= thousands % 100 <= 14):
+            result.append(f"{word} тысячи")
+        else:
+            result.append(f"{word} тысяч")
+        num %= 1000
+    
+    # Рубли
+    if num > 0 or not result:
+        word = three_digits(num)
+        result.append(word)
+    
+    text = ' '.join(result).strip()
+    text = text[0].upper() + text[1:] if text else ""
+    
+    # Окончание "рублей"
+    last_digit = int(str(num)[-1]) if num > 0 else 0
+    last_two = num % 100
+    if last_digit == 1 and last_two != 11:
+        text += " рубль"
+    elif 2 <= last_digit <= 4 and not (12 <= last_two <= 14):
+        text += " рубля"
+    else:
+        text += " рублей"
+    
+    text += " 00 копеек"
+    return text
+
+def format_price(num: float) -> str:
+    """Форматирует цену с пробелами"""
+    return f"{num:,.0f}".replace(",", " ")
+
+async def get_next_kp_number() -> str:
+    """Получает следующий номер КП"""
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT MAX(id) as max_id FROM kp_documents")
+            next_id = (row['max_id'] or 0) + 1
+            return str(next_id)
+    return str(uuid.uuid4())[:6]
+
+def generate_kp_html(kp_data: dict, legal_entity: dict, kp_number: str) -> str:
+    """Генерирует HTML коммерческого предложения"""
+    
+    # Расчёт сумм
+    materials = kp_data.get("materials", [])
+    works = kp_data.get("works", [])
+    
+    total_materials = sum(m["quantity"] * m["price"] for m in materials)
+    total_works = sum(w["quantity"] * w["price"] for w in works)
+    total = total_materials + total_works
+    
+    vat_rate = legal_entity.get("vat")
+    vat_amount = 0
+    if vat_rate:
+        vat_amount = total * vat_rate / (100 + vat_rate)
+    
+    # Дата
+    today = datetime.now().strftime("%d.%m.%y")
+    validity_days = kp_data.get("validity_days", 14)
+    
+    # Клиент
+    client_name = kp_data.get("client_name", "")
+    client_contact = kp_data.get("client_contact", "")
+    object_address = kp_data.get("object_address", "")
+    
+    # Путь к картинкам
+    stamps_dir = Path(__file__).parent / "static" / "stamps"
+    
+    def img_to_base64(filename: str) -> str:
+        path = stamps_dir / filename
+        if path.exists():
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+        return ""
+    
+    logo_b64 = img_to_base64(legal_entity.get("logo", ""))
+    stamp_b64 = img_to_base64(legal_entity.get("stamp", ""))
+    sign_b64 = img_to_base64(legal_entity.get("sign", ""))
+    
+    # Таблицы
+    materials_rows = ""
+    for i, m in enumerate(materials, 1):
+        summa = m["quantity"] * m["price"]
+        materials_rows += f"""
+        <tr>
+            <td class="center">{i}</td>
+            <td>{m["name"]}</td>
+            <td class="center">{m["quantity"]}</td>
+            <td class="center">{m["unit"]}</td>
+            <td class="right">{format_price(m["price"])}</td>
+            <td class="right">{format_price(summa)}</td>
+        </tr>"""
+    
+    works_rows = ""
+    for i, w in enumerate(works, len(materials) + 1):
+        summa = w["quantity"] * w["price"]
+        works_rows += f"""
+        <tr>
+            <td class="center">{i}</td>
+            <td>{w["name"]}</td>
+            <td class="center">{w["quantity"]}</td>
+            <td class="center">{w["unit"]}</td>
+            <td class="right">{format_price(w["price"])}</td>
+            <td class="right">{format_price(summa)}</td>
+        </tr>"""
+    
+    # НДС строка
+    vat_line = "НДС (Без НДС):" if not vat_rate else f"НДС ({vat_rate}%): {format_price(vat_amount)} руб"
+    
+    html = f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {{
+            size: A4;
+            margin: 15mm 15mm 20mm 15mm;
+        }}
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #1a1a1a;
+        }}
+        .header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #D4A53A;
+        }}
+        .logo {{
+            height: 50px;
+        }}
+        .title {{
+            font-size: 18pt;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }}
+        .info-block {{
+            margin-bottom: 15px;
+        }}
+        .info-row {{
+            display: flex;
+            margin-bottom: 5px;
+        }}
+        .info-label {{
+            width: 120px;
+            color: #666;
+        }}
+        .info-value {{
+            flex: 1;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }}
+        th, td {{
+            border: 1px solid #ccc;
+            padding: 6px 8px;
+            text-align: left;
+            font-size: 9pt;
+        }}
+        th {{
+            background: #f5f5f5;
+            font-weight: 600;
+        }}
+        .center {{ text-align: center; }}
+        .right {{ text-align: right; }}
+        .section-title {{
+            font-weight: bold;
+            margin: 15px 0 8px 0;
+            font-size: 11pt;
+        }}
+        .totals {{
+            margin-top: 15px;
+            text-align: right;
+        }}
+        .totals-row {{
+            margin-bottom: 3px;
+        }}
+        .totals-final {{
+            font-size: 12pt;
+            font-weight: bold;
+        }}
+        .amount-words {{
+            margin: 15px 0;
+            font-style: italic;
+        }}
+        .validity {{
+            margin: 15px 0;
+            color: #666;
+        }}
+        .signature-block {{
+            margin-top: 40px;
+            display: flex;
+            align-items: flex-end;
+            gap: 20px;
+        }}
+        .signature-line {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .stamp {{
+            width: 150px;
+            height: auto;
+        }}
+        .sign {{
+            width: 120px;
+            height: auto;
+        }}
+        .signer-name {{
+            border-top: 1px solid #000;
+            padding-top: 5px;
+            min-width: 150px;
+            text-align: center;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        {'<img class="logo" src="data:image/png;base64,' + logo_b64 + '">' if logo_b64 else ''}
+        <div></div>
+    </div>
+    
+    <div class="title">Коммерческое предложение № {kp_number} от {today}</div>
+    
+    <div class="info-block">
+        <div class="info-row">
+            <span class="info-label">Поставщик:</span>
+            <span class="info-value">{legal_entity["name"]}, ИНН {legal_entity["inn"]}, {legal_entity["address"]}, тел.: {legal_entity["phone"]}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Покупатель:</span>
+            <span class="info-value">{client_name}{', тел.: ' + client_contact if client_contact else ''}</span>
+        </div>
+        {f'<div class="info-row"><span class="info-label">Объект:</span><span class="info-value">{object_address}</span></div>' if object_address else ''}
+    </div>
+    
+    <div class="section-title">Материалы</div>
+    <table>
+        <tr>
+            <th class="center" style="width:30px">№</th>
+            <th>Наименование</th>
+            <th class="center" style="width:50px">Кол-во</th>
+            <th class="center" style="width:40px">Ед.</th>
+            <th class="right" style="width:80px">Цена</th>
+            <th class="right" style="width:90px">Сумма</th>
+        </tr>
+        {materials_rows}
+    </table>
+    <div class="totals-row right"><strong>Итого материалы: {format_price(total_materials)} руб</strong></div>
+    
+    <div class="section-title">Работы</div>
+    <table>
+        <tr>
+            <th class="center" style="width:30px">№</th>
+            <th>Наименование</th>
+            <th class="center" style="width:50px">Кол-во</th>
+            <th class="center" style="width:40px">Ед.</th>
+            <th class="right" style="width:80px">Цена</th>
+            <th class="right" style="width:90px">Сумма</th>
+        </tr>
+        {works_rows}
+    </table>
+    <div class="totals-row right"><strong>Итого работы: {format_price(total_works)} руб</strong></div>
+    
+    <div class="validity">Срок актуальности предложения {validity_days} рабочих дней</div>
+    
+    <div class="totals">
+        <div class="totals-row">Итого: {format_price(total)} руб</div>
+        <div class="totals-row">{vat_line}</div>
+        <div class="totals-row totals-final">Всего к оплате: {format_price(total)} руб</div>
+    </div>
+    
+    <div class="amount-words">{num_to_words(total)}</div>
+    
+    <div class="signature-block">
+        <span>{legal_entity["signer_title"]}</span>
+        <div class="signature-line">
+            {'<img class="stamp" src="data:image/png;base64,' + stamp_b64 + '">' if stamp_b64 else ''}
+            {'<img class="sign" src="data:image/png;base64,' + sign_b64 + '">' if sign_b64 else ''}
+        </div>
+        <div class="signer-name">{legal_entity["signer"]}</div>
+    </div>
+</body>
+</html>"""
+    return html, total_materials, total_works, total
+
+async def generate_kp_pdf(kp_data: dict, user: dict) -> dict:
+    """Генерирует PDF коммерческого предложения"""
+    legal_entity_id = kp_data.get("legal_entity_id")
+    legal_entity = LEGAL_ENTITIES.get(legal_entity_id)
+    
+    if not legal_entity:
+        return {"error": f"Юрлицо {legal_entity_id} не найдено"}
+    
+    kp_number = await get_next_kp_number()
+    html_content, total_materials, total_works, total = generate_kp_html(kp_data, legal_entity, kp_number)
+    
+    # Сохраняем HTML временно
+    kp_dir = Path("/tmp/kp")
+    kp_dir.mkdir(exist_ok=True)
+    
+    html_path = kp_dir / f"kp_{kp_number}.html"
+    pdf_path = kp_dir / f"kp_{kp_number}.pdf"
+    
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    
+    # Конвертируем в PDF через weasyprint
+    try:
+        result = subprocess.run(
+            ["weasyprint", str(html_path), str(pdf_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode != 0:
+            print(f"WeasyPrint error: {result.stderr}")
+            return {"error": f"Ошибка генерации PDF: {result.stderr}"}
+    except FileNotFoundError:
+        return {"error": "WeasyPrint не установлен на сервере"}
+    except Exception as e:
+        return {"error": f"Ошибка: {str(e)}"}
+    
+    # Сохраняем в базу
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO kp_documents (kp_number, user_id, user_name, legal_entity_id, client_name, data, total_materials, total_works, total)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ''', kp_number, user["id"], user["name"], legal_entity_id, 
+                kp_data.get("client_name", ""), json.dumps(kp_data),
+                total_materials, total_works, total)
+    
+    return {
+        "success": True,
+        "kp_number": kp_number,
+        "download_url": f"/api/kp/{kp_number}/download",
+        "total_materials": total_materials,
+        "total_works": total_works,
+        "total": total
+    }
+
+async def handle_tool_use(tool_name: str, tool_input: dict, user: dict) -> str:
+    """Обрабатывает вызов инструмента"""
+    if tool_name == "generate_kp":
+        result = await generate_kp_pdf(tool_input, user)
+        if result.get("error"):
+            return f"Ошибка генерации КП: {result['error']}"
+        return f"""✅ КП № {result['kp_number']} успешно сформировано!
+
+📊 **Итого:**
+- Материалы: {format_price(result['total_materials'])} руб
+- Работы: {format_price(result['total_works'])} руб  
+- **Всего: {format_price(result['total'])} руб**
+
+📥 [Скачать PDF]({result['download_url']})"""
+    return "Неизвестный инструмент"
+
 # ── Protected API endpoints ──
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, request: Request):
@@ -426,14 +997,22 @@ async def chat_stream(req: ChatRequest, request: Request):
 
     recent_messages = messages[-20:]
     client = anthropic.Anthropic(api_key=API_KEY)
+    
+    # Список инструментов
+    tools = [
+        {"type": "web_search_20250305", "name": "web_search", "max_uses": 2},
+        KP_TOOL
+    ]
 
     async def generate():
         full_reply = ""
+        tool_use_block = None
+        
         try:
             with client.messages.stream(
                 model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
                 messages=recent_messages,
-                tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}]
+                tools=tools
             ) as stream:
                 for event in stream:
                     if hasattr(event, 'type'):
@@ -447,13 +1026,58 @@ async def chat_stream(req: ChatRequest, request: Request):
                                     yield f"data: {json.dumps({'type': 'searching', 'content': 'Ищу информацию...'})}\n\n"
                                 elif event.content_block.type == 'web_search_tool_result':
                                     yield f"data: {json.dumps({'type': 'search_done', 'content': 'Найдено!'})}\n\n"
-                                elif event.content_block.type == 'text':
-                                    pass
+                                elif event.content_block.type == 'tool_use':
+                                    tool_use_block = {
+                                        "id": event.content_block.id,
+                                        "name": event.content_block.name,
+                                        "input": {}
+                                    }
+                                    yield f"data: {json.dumps({'type': 'tool_start', 'content': f'Генерирую КП...'})}\n\n"
+                        elif event.type == 'content_block_stop':
+                            pass
+                
+                # Получаем финальное сообщение для проверки tool_use
+                final_message = stream.get_final_message()
+                
+                # Проверяем на tool_use
+                for block in final_message.content:
+                    if block.type == "tool_use" and block.name == "generate_kp":
+                        yield f"data: {json.dumps({'type': 'generating_kp', 'content': 'Формирую КП...'})}\n\n"
+                        
+                        # Выполняем генерацию КП
+                        tool_result = await handle_tool_use(block.name, block.input, user)
+                        
+                        # Отправляем результат обратно Claude для формирования ответа
+                        tool_messages = recent_messages + [
+                            {"role": "assistant", "content": final_message.content},
+                            {
+                                "role": "user",
+                                "content": [{
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": tool_result
+                                }]
+                            }
+                        ]
+                        
+                        # Получаем финальный ответ
+                        final_response = client.messages.create(
+                            model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+                            messages=tool_messages,
+                            tools=tools
+                        )
+                        
+                        for final_block in final_response.content:
+                            if final_block.type == "text":
+                                full_reply += final_block.text
+                                yield f"data: {json.dumps({'type': 'text', 'content': final_block.text})}\n\n"
 
             await save_message(session_id, "assistant", full_reply)
             messages.append({"role": "assistant", "content": full_reply})
             yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -498,6 +1122,61 @@ async def delete_session(session_id: str, request: Request):
             await conn.execute('DELETE FROM chat_sessions WHERE id=$1 AND user_id=$2', session_id, user["id"])
             return {"status": "deleted"}
     raise HTTPException(404, "Сессия не найдена")
+
+# ── KP Download ──
+@app.get("/api/kp/{kp_number}/download")
+async def download_kp(kp_number: str, request: Request):
+    """Скачать PDF коммерческого предложения"""
+    user = require_auth(request)
+    
+    pdf_path = Path(f"/tmp/kp/kp_{kp_number}.pdf")
+    if not pdf_path.exists():
+        raise HTTPException(404, "КП не найдено")
+    
+    # Проверяем права доступа
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT user_id, client_name FROM kp_documents WHERE kp_number=$1',
+                kp_number
+            )
+            if not row:
+                raise HTTPException(404, "КП не найдено в базе")
+            # Можно добавить проверку user_id если нужно ограничить доступ
+    
+    # Получаем имя клиента для имени файла
+    client_name = row['client_name'] if row else "client"
+    filename = f"KP_{kp_number}_{client_name.replace(' ', '_')}.pdf"
+    
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+@app.get("/api/kp")
+async def list_kp(request: Request):
+    """Список КП пользователя"""
+    user = require_auth(request)
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT kp_number, legal_entity_id, client_name, total, created_at
+                   FROM kp_documents WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50''',
+                user["id"]
+            )
+            return [
+                {
+                    "kp_number": r['kp_number'],
+                    "legal_entity": LEGAL_ENTITIES.get(r['legal_entity_id'], {}).get("name", r['legal_entity_id']),
+                    "client_name": r['client_name'],
+                    "total": float(r['total']) if r['total'] else 0,
+                    "created_at": r['created_at'].isoformat(),
+                    "download_url": f"/api/kp/{r['kp_number']}/download"
+                }
+                for r in rows
+            ]
+    return []
 
 # ── Frontend ──
 @app.get("/")
