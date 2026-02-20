@@ -830,17 +830,17 @@ def generate_kp_pdf_file(kp_data: dict, legal_entity: dict, kp_number: str, pdf_
     # Информация о сторонах
     pdf.set_font(font_name, "", 9)
     pdf.set_text_color(*gray)
-    pdf.cell(30, 5, "ЗАКАЗЧИК:", ln=False)
+    pdf.cell(40, 5, "ЗАКАЗЧИК:", ln=False)
     pdf.set_text_color(*black)
-    pdf.multi_cell(0, 5, client_name)
+    pdf.multi_cell(0, 5, client_name if client_name else "—")
     
     pdf.set_text_color(*gray)
-    pdf.cell(30, 5, "ИСПОЛНИТЕЛЬ:", ln=False)
+    pdf.cell(40, 5, "ИСПОЛНИТЕЛЬ:", ln=False)
     pdf.set_text_color(*black)
     pdf.multi_cell(0, 5, legal_entity['name'])
     
     pdf.set_text_color(*gray)
-    pdf.cell(30, 5, "СРОК КП:", ln=False)
+    pdf.cell(40, 5, "СРОК КП:", ln=False)
     pdf.set_text_color(*black)
     pdf.cell(0, 5, f"{validity_days} календарных дней", ln=True)
     pdf.ln(5)
