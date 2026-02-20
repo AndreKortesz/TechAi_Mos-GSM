@@ -18,8 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем код
 COPY . .
 
-# Порт
+# Порт по умолчанию
+ENV PORT=8000
 EXPOSE 8000
 
-# Запуск через shell чтобы раскрыть $PORT
-CMD ["/bin/sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Запуск - Python сам получит PORT из окружения
+CMD ["python", "-c", "import os; import subprocess; port = os.environ.get('PORT', '8000'); subprocess.run(['uvicorn', 'server:app', '--host', '0.0.0.0', '--port', port])"]
