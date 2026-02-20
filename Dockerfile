@@ -21,5 +21,5 @@ COPY . .
 # Порт
 EXPOSE 8000
 
-# Запуск
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Запуск (Railway передаёт PORT как переменную окружения)
+CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}
