@@ -1,0 +1,1815 @@
+"""
+TechBase — AI-ассистент по СКУД и СВН
+Backend: FastAPI + Claude API + Web Search + PostgreSQL + Bitrix24 OAuth
+
+Деплой: GitHub → Railway
+Переменные: ANTHROPIC_API_KEY, DATABASE_URL, BITRIX_CLIENT_ID, BITRIX_CLIENT_SECRET, BITRIX_REDIRECT_URI
+"""
+
+import os
+import json
+import uuid
+import secrets
+import base64
+import subprocess
+from datetime import datetime
+from typing import Optional
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse, Response
+from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
+import anthropic
+import asyncpg
+import httpx
+
+# ── Config ──
+API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+MODEL = "claude-sonnet-4-5-20250929"
+MAX_TOKENS = 4096
+
+# ── Bitrix24 OAuth ──
+BITRIX_CLIENT_ID = os.environ.get("BITRIX_CLIENT_ID", "")
+BITRIX_CLIENT_SECRET = os.environ.get("BITRIX_CLIENT_SECRET", "")
+BITRIX_REDIRECT_URI = os.environ.get("BITRIX_REDIRECT_URI", "")
+BITRIX_DOMAIN = os.environ.get("BITRIX_DOMAIN", "svyaz.bitrix24.ru")
+SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
+
+# ── Admin Config ──
+# Bitrix ID пользователей с правами администратора
+ADMIN_USER_IDS = os.environ.get("ADMIN_USER_IDS", "9").split(",")  # По умолчанию: Андрей Конторин
+
+# ── System Prompt ──
+SYSTEM_PROMPT = """Ты — TechBase AI, экспертный технический ассистент компании Mos-GSM.
+Твоя специализация: СКУД (системы контроля и управления доступом) и СВН (системы видеонаблюдения).
+
+## КТО ТОБОЙ ПОЛЬЗУЕТСЯ:
+
+Тобой пользуются МЕНЕДЖЕРЫ компании Mos-GSM — это компания, которая сама продаёт, проектирует и устанавливает слаботочные системы. Менеджеры — это сотрудники Mos-GSM, а не конечные заказчики.
+
+Поэтому:
+- НИКОГДА не советуй "обратиться к интегратору" или "вызвать специалиста" — менеджер и есть сотрудник интегратора.
+- НИКОГДА не пиши "вызовите монтажников на замер" — монтажники работают в той же компании.
+- Если нужно что-то уточнить — пиши "уточните у инженера" или "согласуйте с проектным отделом".
+- При расчётах стоимости — показывай цены на оборудование отдельно, монтаж отдельно. Менеджеру нужно составить смету для клиента.
+- Помни: менеджер использует твои ответы чтобы консультировать СВОИХ клиентов и составлять коммерческие предложения.
+
+## ТВОИ ТЕХНИЧЕСКИЕ ОГРАНИЧЕНИЯ:
+
+- Ты работаешь ТОЛЬКО с текстом. Ты НЕ можешь принимать или просматривать фото, файлы, PDF, видео.
+- НИКОГДА не проси прислать фото или загрузить файл — ты не сможешь их увидеть.
+- Если менеджер говорит про фото от клиента — попроси ОПИСАТЬ словами что на фото: сколько дверей, какие помещения, тип дверей и т.д.
+- Если нужна информация из документа — попроси скопировать текст из него.
+
+## Твои знания охватывают:
+
+### СКУД — производители и оборудование:
+- **Болид** (ИСО «Орион»): контроллеры С2000-2, С2000-4, пульт С2000М, считыватели Proxy, программирование через UProg, интерфейс RS-485
+- **Sigur**: контроллеры, серверное ПО, интеграция с 1С, шаблоны пропусков, настройка точек доступа
+- **PERCo**: турникеты, контроллеры CT/L серии, PERCo-Web, электромеханические замки, считыватели
+- **RusGuard**: контроллеры ACS, биометрические считыватели, облачный СКУД
+- **Parsec**: контроллеры NC серии, ParsecNET
+- **HID Global**: считыватели iCLASS, контроллеры VertX/Edge
+- **ZKTeco**: биометрия, терминалы, контроллеры InBio
+- **Hikvision СКУД**: контроллеры DS-K2600, терминалы распознавания лиц
+
+### СВН — производители и оборудование:
+- **Hikvision**: IP-камеры (DS-2CD серия), NVR (DS-7600/7700/9600), iVMS-4200, HiLook, SADP Tool, ONVIF, сброс паролей
+- **Dahua**: IP-камеры (IPC-HDW/HFW), NVR (DHI-NVR), SmartPSS, DSS Pro, ConfigTool, ONVIF
+- **Axis**: IP-камеры, AXIS Companion, ACAP аналитика, VAPIX API
+- **Trassir**: VMS, модуль СКУД, аналитика (AutoTRASSIR, нейроаналитика), ActiveDome
+- **Macroscop**: VMS, распознавание лиц, интеграция со СКУД
+- **IDIS**: DirectIP, NVR, камеры
+- **Uniview**: IP-камеры, NVR, EZStation
+
+### Общие темы:
+- Протоколы: ONVIF, RTSP, RS-485, Wiegand (26/34/37), OSDP, Dallas Touch Memory
+- Сетевые настройки: IP-адресация, DHCP, Port Forwarding, DDNS, P2P облако
+- Расчёты: архив видеонаблюдения, пропускная способность сети, выбор жёстких дисков
+- Совместимость оборудования разных вендоров
+- Монтаж: прокладка кабелей, питание (PoE, 12V, 24V), грозозащита
+
+## Правила ответа:
+
+Ты — лучший в мире специалист по слаботочным системам, который умеет объяснять сложные вещи простым языком. Представь, что объясняешь ребёнку — чтобы даже человек без технического образования понял. При этом информация должна быть точной и профессиональной.
+
+1. **Объясняй понятно** — используй простые слова, аналогии из жизни. Если говоришь "RS-485", тут же поясни что это и зачем. Менеджер не инженер.
+2. **Не дублируй информацию** — каждая мысль только в одном месте.
+3. **Не лей воду** — никаких "Отличный вопрос!", "Давайте разберём подробно". Сразу к делу.
+4. **НЕ используй веб-поиск по умолчанию!** Подробности ниже.
+5. **Указывай конкретные модели и версии** — не "камера Hikvision", а "DS-2CD2143G2-I"
+6. **Схемы подключения** — клеммы, провода, настройки + поясняй зачем каждый провод нужен.
+7. **Если не уверен — скажи честно** и предложи уточнить у инженера.
+8. **Отвечай на русском языке**
+9. **Если вопрос неоднозначный** — уточни модель, версию прошивки, контекст
+10. **Формат**: заголовки + пункты. Таблицы — только когда реально помогают сравнить данные.
+
+## КРИТИЧЕСКИ ВАЖНО — Экономия веб-поиска:
+
+Каждый веб-поиск стоит денег компании. Используй его ТОЛЬКО когда без него НЕВОЗМОЖНО ответить.
+
+### НЕ НУЖЕН поиск (отвечай из своих знаний):
+- Как настроить / подключить / сбросить оборудование
+- Схемы подключения (SADP, ONVIF, Wiegand, RS-485, PoE и т.д.)
+- Объяснение принципов работы
+- Типовые ошибки и диагностика
+- Расчёты (архив, пропускная способность, сечение кабеля)
+- Сравнение технологий и подходов
+- IP-адреса по умолчанию, стандартные пароли
+
+### НУЖЕН поиск (только эти случаи):
+- Актуальные ЦЕНЫ на оборудование
+- Пользователь ПРЯМО просит: "найди", "поищи", "актуальная ссылка"
+- Конкретные характеристики редкой модели, в которых ты совсем не уверен
+
+### Если сомневаешься — НЕ ищи. Ответь из знаний и добавь: "Если нужны актуальные данные с сайта производителя — скажите, поищу."
+
+## Точность расчётов:
+- Показывай каждый шаг расчёта
+- Перепроверь результат на здравый смысл
+- Не забывай переводить единицы: секунды↔часы (×3600), байты↔биты (×8), ГБ↔ТБ (÷1024)
+- В конце добавь: "Приблизительный расчёт. Для точных данных используйте калькулятор производителя."
+
+## ГЕНЕРАЦИЯ КОММЕРЧЕСКИХ ПРЕДЛОЖЕНИЙ (КП):
+
+У тебя есть инструмент `generate_kp` для создания PDF-файла коммерческого предложения с печатью и подписью.
+
+### Когда использовать:
+- Менеджер просит "составить КП", "сделать коммерческое предложение", "подготовить смету"
+- Менеджер говорит "сформируй КП", "сгенерируй КП", "создай КП в PDF"
+
+### Как использовать:
+1. Уточни у менеджера:
+   - От какого юрлица? (ИП Конторин / ООО Инфинити Буст / ИП Тимофеев)
+   - Название клиента (покупателя)
+   - Что нужно установить? (описание проекта)
+
+2. Сформируй данные для КП:
+   - Описание проекта (что устанавливаем, для чего)
+   - Список оборудования с ценами
+   - Список работ с ценами
+   - Функциональные возможности системы
+   - Этапы реализации с сроками
+   - Дополнительные опции (если есть)
+
+3. Вызови инструмент `generate_kp` с полными данными
+
+### ВАЖНО:
+- Если менеджер просто спрашивает "сколько стоит" — отвечай текстом, НЕ генерируй КП
+- Если менеджер явно просит КП/смету/предложение — ОБЯЗАТЕЛЬНО вызывай generate_kp
+- Заполняй ВСЕ поля КП максимально подробно — это документ для клиента
+- После генерации менеджер получит ссылку на скачивание PDF
+"""
+
+# ── Юридические лица ──
+LEGAL_ENTITIES = {
+    "ip_kontorin": {
+        "id": "ip_kontorin",
+        "name": "ИП Конторин А.В.",
+        "full_name": "Индивидуальный предприниматель Конторин Андрей Валентинович",
+        "inn": "502498623314",
+        "address": "143423, Московская область, Красногорский район, п. Истра, д. 18, кв. 31",
+        "phone": "+7 (499) 393-34-42",
+        "bank": "АО \"ТБанк\"",
+        "bik": "044525974",
+        "corr_account": "30101810145250000974",
+        "account": "40802810100000405964",
+        "vat": None,  # Без НДС
+        "signer": "Конторин А.В.",
+        "signer_title": "Предприниматель",
+        "logo": "logo_mosgsm.png",
+        "stamp": "stamp_ip_kontorin.png",
+        "sign": "sign_ip_kontorin.png"
+    },
+    "ooo_infinity": {
+        "id": "ooo_infinity",
+        "name": "ООО \"Инфинити Буст\"",
+        "full_name": "Общество с ограниченной ответственностью \"Инфинити Буст\"",
+        "inn": "5024206433",
+        "kpp": "502401001",
+        "address": "143402, Московская область, г.о. Красногорск, г Красногорск, пер Железнодорожный, дом 7, помещение 32",
+        "phone": "+7 (499) 393-34-42",
+        "bank": "ООО \"Банк Точка\"",
+        "bik": "044525104",
+        "corr_account": "30101810745374525104",
+        "account": "40702810020000044948",
+        "vat": 22,  # НДС 22%
+        "signer": "Конторин А. В.",
+        "signer_title": "Предприниматель",
+        "logo": "logo_infinity.png",
+        "stamp": "stamp_ooo_infinity.png",
+        "sign": "sign_ooo_infinity.png"
+    },
+    "ip_timofeev": {
+        "id": "ip_timofeev",
+        "name": "ИП Тимофеев Д.Д.",
+        "full_name": "Индивидуальный предприниматель Тимофеев Денис Дмитриевич",
+        "inn": "502482648754",
+        "address": "143406, Московская область, г.о. Красногорск, г Красногорск, ул Циолковского, д. 4, кв. 88",
+        "phone": "+7 (495) 414-11-53",
+        "bank": "",
+        "bik": "",
+        "corr_account": "",
+        "account": "",
+        "vat": None,  # Без НДС
+        "signer": "Тимофеев Д.Д.",
+        "signer_title": "Предприниматель",
+        "logo": "logo_mosgsm.png",
+        "stamp": "stamp_ip_timofeev.png",
+        "sign": "sign_ip_timofeev.png"
+    }
+}
+
+# ── Tool для генерации КП ──
+KP_TOOL = {
+    "name": "generate_kp",
+    "description": """Генерирует коммерческое предложение (КП) в формате PDF.
+    
+Используй этот инструмент когда менеджер просит:
+- составить КП / коммерческое предложение
+- сделать смету / расчёт для клиента
+- подготовить предложение на оборудование и работы
+
+ВАЖНО: Заполняй ВСЕ поля максимально подробно!""",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "legal_entity_id": {
+                "type": "string",
+                "enum": ["ip_kontorin", "ooo_infinity", "ip_timofeev"],
+                "description": "ID юрлица поставщика: ip_kontorin (ИП Конторин, без НДС), ooo_infinity (ООО Инфинити Буст, с НДС 22%), ip_timofeev (ИП Тимофеев, без НДС)"
+            },
+            "client_name": {
+                "type": "string",
+                "description": "Название клиента (покупателя)"
+            },
+            "client_contact": {
+                "type": "string",
+                "description": "Контакт клиента (телефон, email) - опционально"
+            },
+            "object_address": {
+                "type": "string",
+                "description": "Адрес объекта - опционально"
+            },
+            "project_description": {
+                "type": "string",
+                "description": "Описание проекта: что устанавливаем, для чего, основные задачи"
+            },
+            "features": {
+                "type": "array",
+                "description": "Список функций/возможностей системы (каждый пункт начинается с ✓)",
+                "items": {"type": "string"}
+            },
+            "materials": {
+                "type": "array",
+                "description": "Список материалов/оборудования",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Наименование"},
+                        "quantity": {"type": "number", "description": "Количество"},
+                        "unit": {"type": "string", "description": "Единица измерения (шт, м, компл)"},
+                        "price": {"type": "number", "description": "Цена за единицу"}
+                    },
+                    "required": ["name", "quantity", "unit", "price"]
+                }
+            },
+            "works": {
+                "type": "array",
+                "description": "Список работ",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Наименование работы"},
+                        "quantity": {"type": "number", "description": "Количество"},
+                        "unit": {"type": "string", "description": "Единица измерения"},
+                        "price": {"type": "number", "description": "Цена за единицу"}
+                    },
+                    "required": ["name", "quantity", "unit", "price"]
+                }
+            },
+            "stages": {
+                "type": "array",
+                "description": "Этапы реализации проекта",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Название этапа"},
+                        "duration": {"type": "string", "description": "Срок (например: 1-2 дня)"},
+                        "description": {"type": "string", "description": "Описание работ на этапе"}
+                    },
+                    "required": ["name", "duration", "description"]
+                }
+            },
+            "options": {
+                "type": "array",
+                "description": "Дополнительные опции (по запросу)",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Название опции"},
+                        "price": {"type": "string", "description": "Цена (например: +12 000 ₽)"}
+                    },
+                    "required": ["name", "price"]
+                }
+            },
+            "warranty": {
+                "type": "object",
+                "description": "Гарантийные условия",
+                "properties": {
+                    "equipment_months": {"type": "integer", "description": "Гарантия на оборудование в месяцах"},
+                    "works_months": {"type": "integer", "description": "Гарантия на работы в месяцах"},
+                    "additional": {"type": "array", "items": {"type": "string"}, "description": "Дополнительные гарантийные условия"}
+                }
+            },
+            "payment_terms": {
+                "type": "string",
+                "description": "Условия оплаты (например: 50% предоплата, 50% по завершении)"
+            },
+            "total_duration": {
+                "type": "string",
+                "description": "Общий срок реализации проекта"
+            },
+            "validity_days": {
+                "type": "integer",
+                "description": "Срок актуальности КП в рабочих днях (по умолчанию 14)"
+            },
+            "manager_name": {
+                "type": "string",
+                "description": "ФИО менеджера проекта"
+            },
+            "manager_phone": {
+                "type": "string",
+                "description": "Телефон менеджера"
+            },
+            "manager_email": {
+                "type": "string",
+                "description": "Email менеджера"
+            }
+        },
+        "required": ["legal_entity_id", "client_name", "materials", "works"]
+    }
+}
+
+# ── Database ──
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+db_pool = None
+chat_sessions: dict = {}
+
+async def init_db():
+    global db_pool
+    if not DATABASE_URL:
+        print("⚠️  DATABASE_URL не задан — используется in-memory хранение")
+        return
+    try:
+        db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        async with db_pool.acquire() as conn:
+            # Create tables
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT DEFAULT '',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    session_id TEXT REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id);
+                
+                CREATE TABLE IF NOT EXISTS kp_documents (
+                    id SERIAL PRIMARY KEY,
+                    kp_number TEXT UNIQUE NOT NULL,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT,
+                    legal_entity_id TEXT NOT NULL,
+                    client_name TEXT NOT NULL,
+                    data JSONB NOT NULL,
+                    total_materials NUMERIC,
+                    total_works NUMERIC,
+                    total NUMERIC,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_kp_user ON kp_documents(user_id);
+                
+                CREATE TABLE IF NOT EXISTS token_usage (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT,
+                    session_id TEXT,
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    total_tokens INTEGER DEFAULT 0,
+                    has_web_search BOOLEAN DEFAULT FALSE,
+                    has_tool_use BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_token_user ON token_usage(user_id);
+                CREATE INDEX IF NOT EXISTS idx_token_date ON token_usage(created_at);
+            ''')
+            # Migration: add new columns
+            for col in [
+                "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT ''",
+                "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_name TEXT DEFAULT ''",
+            ]:
+                try:
+                    await conn.execute(col)
+                except:
+                    pass
+            # Index on user_id (after column exists)
+            try:
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON chat_sessions(user_id)")
+            except:
+                pass
+        print("✅ PostgreSQL подключена, таблицы готовы")
+    except Exception as e:
+        print(f"❌ Ошибка подключения к PostgreSQL: {e}")
+
+async def close_db():
+    global db_pool
+    if db_pool:
+        await db_pool.close()
+
+@asynccontextmanager
+async def lifespan(app):
+    await init_db()
+    yield
+    await close_db()
+
+# ── FastAPI App ──
+app = FastAPI(title="TechBase AI", version="1.0", lifespan=lifespan)
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+
+# ── Auth helpers ──
+def get_current_user(request: Request) -> Optional[dict]:
+    return request.session.get("user")
+
+def require_auth(request: Request) -> dict:
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    return user
+
+def is_admin(user: dict) -> bool:
+    """Проверяет является ли пользователь администратором"""
+    return str(user.get("id", "")) in ADMIN_USER_IDS
+
+def require_admin(request: Request) -> dict:
+    """Требует права администратора"""
+    user = require_auth(request)
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return user
+
+async def save_token_usage(user_id: str, user_name: str, session_id: str, 
+                           input_tokens: int, output_tokens: int, 
+                           has_web_search: bool = False, has_tool_use: bool = False):
+    """Сохраняет статистику использования токенов"""
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                await conn.execute('''
+                    INSERT INTO token_usage (user_id, user_name, session_id, input_tokens, output_tokens, total_tokens, has_web_search, has_tool_use)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ''', user_id, user_name, session_id, input_tokens, output_tokens, 
+                    input_tokens + output_tokens, has_web_search, has_tool_use)
+        except Exception as e:
+            print(f"Error saving token usage: {e}")
+
+# ── Auth routes ──
+@app.get("/auth/login")
+async def auth_login():
+    if not BITRIX_CLIENT_ID:
+        return HTMLResponse("<h1>Ошибка: BITRIX_CLIENT_ID не настроен</h1>", status_code=500)
+    auth_url = (
+        f"https://{BITRIX_DOMAIN}/oauth/authorize/"
+        f"?client_id={BITRIX_CLIENT_ID}"
+        f"&response_type=code"
+        f"&redirect_uri={BITRIX_REDIRECT_URI}"
+    )
+    return RedirectResponse(auth_url)
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    params = dict(request.query_params)
+    code = params.get("code")
+    domain = params.get("domain", BITRIX_DOMAIN)
+    server_domain = params.get("server_domain", "oauth.bitrix.info")
+
+    if not code:
+        return HTMLResponse("<h1>Ошибка авторизации: нет кода</h1>", status_code=400)
+
+    token_url = f"https://{server_domain}/oauth/token/"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            # Exchange code for token
+            resp = await client.post(token_url, data={
+                "grant_type": "authorization_code",
+                "client_id": BITRIX_CLIENT_ID,
+                "client_secret": BITRIX_CLIENT_SECRET,
+                "redirect_uri": BITRIX_REDIRECT_URI,
+                "code": code
+            })
+
+            if resp.status_code != 200:
+                print(f"❌ Token exchange failed: {resp.status_code} - {resp.text}")
+                return HTMLResponse(f"<h1>Ошибка получения токена</h1>", status_code=400)
+
+            token_data = resp.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                return HTMLResponse("<h1>Ошибка: нет access_token</h1>", status_code=400)
+
+            # Get user info
+            user_domain = domain or BITRIX_DOMAIN
+            user_resp = await client.post(
+                f"https://{user_domain}/rest/user.current",
+                data={"auth": access_token}
+            )
+
+            if user_resp.status_code != 200:
+                print(f"❌ User info failed: {user_resp.status_code}")
+                return HTMLResponse("<h1>Ошибка получения данных пользователя</h1>", status_code=400)
+
+            user_data = user_resp.json().get("result", {})
+            user = {
+                "id": user_data.get("ID", ""),
+                "name": f"{user_data.get('NAME', '')} {user_data.get('LAST_NAME', '')}".strip(),
+                "email": user_data.get("EMAIL", ""),
+                "position": user_data.get("WORK_POSITION", ""),
+                "photo": user_data.get("PERSONAL_PHOTO", ""),
+            }
+
+            request.session["user"] = user
+            print(f"✅ User logged in: {user['name']} (ID: {user['id']})")
+            return RedirectResponse("/")
+
+        except Exception as e:
+            print(f"❌ Auth error: {e}")
+            return HTMLResponse(f"<h1>Ошибка авторизации</h1><p>{str(e)}</p>", status_code=500)
+
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login")
+
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(401, "Не авторизован")
+    return user
+
+# ── Login page ──
+@app.get("/login")
+async def login_page():
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вход — Mos-GSM AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Roboto',sans-serif;background:#F5F3EF;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#1A1A1A}
+.login-card{background:#fff;border-radius:16px;padding:48px 40px;text-align:center;max-width:400px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.logo-mark{width:72px;height:72px;border-radius:20px;background:#D4A53A;display:inline-flex;align-items:flex-end;justify-content:center;gap:3px;padding-bottom:12px;margin-bottom:20px}
+.logo-mark i{display:block;width:8px;border-radius:3px;background:#1A1A1A}
+.logo-mark i:nth-child(1){height:8px}
+.logo-mark i:nth-child(2){height:16px}
+.logo-mark i:nth-child(3){height:26px}
+.logo-mark i:nth-child(4){height:36px}
+h1{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:2px;margin-bottom:8px}
+.subtitle{color:#6B6560;font-size:14px;margin-bottom:32px;line-height:1.5}
+.login-btn{display:inline-flex;align-items:center;gap:10px;padding:14px 32px;background:#1A1A1A;color:#F3C04D;border:none;border-radius:10px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;transition:.2s;text-decoration:none}
+.login-btn:hover{background:#333;transform:translateY(-1px)}
+.login-btn svg{width:20px;height:20px}
+.footer{margin-top:32px;font-size:12px;color:#9A9590}
+.footer a{color:#C9982E;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="logo-mark"><i></i><i></i><i></i><i></i></div>
+  <h1>MOS-GSM AI</h1>
+  <p class="subtitle">AI-ассистент по СКУД и СВН<br>Для сотрудников компании Mos-GSM</p>
+  <a href="/auth/login" class="login-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+    Войти через Битрикс24
+  </a>
+  <div class="footer">
+    <a href="https://mos-gsm.ru" target="_blank">mos-gsm.ru</a> · Комплексные слаботочные системы
+  </div>
+</div>
+</body>
+</html>""")
+
+# ── Models ──
+class ChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    reply: str
+    session_id: str
+    sources: list[dict] = []
+
+# ── Session helpers ──
+async def get_or_create_session(session_id: Optional[str] = None, user_id: str = "", user_name: str = "") -> tuple[str, list]:
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            if session_id:
+                row = await conn.fetchrow('SELECT id FROM chat_sessions WHERE id=$1', session_id)
+                if row:
+                    rows = await conn.fetch(
+                        'SELECT role, content FROM chat_messages WHERE session_id=$1 ORDER BY id', session_id
+                    )
+                    return session_id, [{"role": r['role'], "content": r['content']} for r in rows]
+            new_id = str(uuid.uuid4())[:8]
+            await conn.execute(
+                'INSERT INTO chat_sessions (id, user_id, user_name, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())',
+                new_id, user_id, user_name
+            )
+            return new_id, []
+    else:
+        if session_id and session_id in chat_sessions:
+            return session_id, chat_sessions[session_id]["messages"]
+        new_id = str(uuid.uuid4())[:8]
+        chat_sessions[new_id] = {"messages": [], "created_at": datetime.now().isoformat()}
+        return new_id, chat_sessions[new_id]["messages"]
+
+async def save_message(session_id: str, role: str, content: str, title: str = None):
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO chat_messages (session_id, role, content) VALUES ($1,$2,$3)',
+                session_id, role, content
+            )
+            if title:
+                await conn.execute('UPDATE chat_sessions SET updated_at=NOW(), title=$2 WHERE id=$1', session_id, title[:80])
+            else:
+                await conn.execute('UPDATE chat_sessions SET updated_at=NOW() WHERE id=$1', session_id)
+
+# ── KP Generation ──
+def num_to_words(num: float) -> str:
+    """Конвертирует число в слова (рубли)"""
+    units = ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять']
+    teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 
+             'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать']
+    tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 
+            'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто']
+    hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 
+                'шестьсот', 'семьсот', 'восемьсот', 'девятьсот']
+    
+    def three_digits(n, feminine=False):
+        result = []
+        if n >= 100:
+            result.append(hundreds[n // 100])
+            n %= 100
+        if 10 <= n < 20:
+            result.append(teens[n - 10])
+            return ' '.join(result)
+        if n >= 10:
+            result.append(tens[n // 10])
+            n %= 10
+        if n > 0:
+            if feminine and n in [1, 2]:
+                result.append(['', 'одна', 'две'][n])
+            else:
+                result.append(units[n])
+        return ' '.join(result)
+    
+    num = int(num)
+    if num == 0:
+        return "ноль рублей 00 копеек"
+    
+    result = []
+    
+    # Миллионы
+    if num >= 1000000:
+        millions = num // 1000000
+        word = three_digits(millions)
+        if millions % 10 == 1 and millions % 100 != 11:
+            result.append(f"{word} миллион")
+        elif 2 <= millions % 10 <= 4 and not (12 <= millions % 100 <= 14):
+            result.append(f"{word} миллиона")
+        else:
+            result.append(f"{word} миллионов")
+        num %= 1000000
+    
+    # Тысячи
+    if num >= 1000:
+        thousands = num // 1000
+        word = three_digits(thousands, feminine=True)
+        if thousands % 10 == 1 and thousands % 100 != 11:
+            result.append(f"{word} тысяча")
+        elif 2 <= thousands % 10 <= 4 and not (12 <= thousands % 100 <= 14):
+            result.append(f"{word} тысячи")
+        else:
+            result.append(f"{word} тысяч")
+        num %= 1000
+    
+    # Рубли
+    if num > 0 or not result:
+        word = three_digits(num)
+        result.append(word)
+    
+    text = ' '.join(result).strip()
+    text = text[0].upper() + text[1:] if text else ""
+    
+    # Окончание "рублей"
+    last_digit = int(str(num)[-1]) if num > 0 else 0
+    last_two = num % 100
+    if last_digit == 1 and last_two != 11:
+        text += " рубль"
+    elif 2 <= last_digit <= 4 and not (12 <= last_two <= 14):
+        text += " рубля"
+    else:
+        text += " рублей"
+    
+    text += " 00 копеек"
+    return text
+
+def format_price(num: float) -> str:
+    """Форматирует цену с пробелами"""
+    return f"{num:,.0f}".replace(",", " ")
+
+async def get_next_kp_number() -> str:
+    """Получает следующий номер КП"""
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT MAX(id) as max_id FROM kp_documents")
+            next_id = (row['max_id'] or 0) + 1
+            return str(next_id)
+    return str(uuid.uuid4())[:6]
+
+def generate_kp_pdf_file(kp_data: dict, legal_entity: dict, kp_number: str, pdf_path: Path) -> tuple:
+    """Генерирует PDF коммерческого предложения с помощью fpdf2"""
+    from fpdf import FPDF
+    
+    # Расчёт сумм
+    materials = kp_data.get("materials", [])
+    works = kp_data.get("works", [])
+    
+    total_materials = sum(m["quantity"] * m["price"] for m in materials)
+    total_works = sum(w["quantity"] * w["price"] for w in works)
+    total = total_materials + total_works
+    
+    vat_rate = legal_entity.get("vat")
+    vat_amount = 0
+    if vat_rate:
+        vat_amount = total * vat_rate / (100 + vat_rate)
+    
+    # Дата
+    today = datetime.now().strftime("%d.%m.%Y")
+    validity_days = kp_data.get("validity_days", 14)
+    
+    # Клиент
+    client_name = kp_data.get("client_name", "")
+    client_contact = kp_data.get("client_contact", "")
+    object_address = kp_data.get("object_address", "")
+    
+    # Путь к картинкам
+    stamps_dir = Path(__file__).parent / "static" / "stamps"
+    fonts_dir = Path(__file__).parent / "static" / "fonts"
+    
+    # Создаём PDF
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    
+    # Добавляем шрифт DejaVu для кириллицы (сначала из проекта, потом из системы)
+    font_path = fonts_dir / "DejaVuSans.ttf"
+    font_path_bold = fonts_dir / "DejaVuSans-Bold.ttf"
+    
+    # Fallback на системные шрифты
+    if not font_path.exists():
+        font_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+        font_path_bold = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+    
+    if font_path.exists():
+        pdf.add_font("DejaVu", "", str(font_path))
+        pdf.add_font("DejaVu", "B", str(font_path_bold))
+        font_name = "DejaVu"
+    else:
+        raise Exception("Шрифт DejaVu не найден! Кириллица не будет работать.")
+    
+    # Цвета
+    yellow = (212, 165, 58)
+    black = (26, 26, 26)
+    gray = (102, 102, 102)
+    
+    # Логотип
+    logo_path = stamps_dir / legal_entity.get("logo", "")
+    if logo_path.exists():
+        pdf.image(str(logo_path), x=10, y=10, h=15)
+    
+    # Линия под шапкой
+    pdf.set_draw_color(*yellow)
+    pdf.set_line_width(0.5)
+    pdf.line(10, 28, 200, 28)
+    
+    # Заголовок
+    pdf.set_y(35)
+    pdf.set_font(font_name, "B", 14)
+    pdf.set_text_color(*black)
+    pdf.cell(0, 8, f"КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ № {kp_number}/2026", ln=True, align="C")
+    pdf.set_font(font_name, "", 10)
+    pdf.cell(0, 6, f"от {today}", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Информация о сторонах
+    pdf.set_font(font_name, "", 9)
+    pdf.set_text_color(*gray)
+    pdf.cell(30, 5, "ЗАКАЗЧИК:", ln=False)
+    pdf.set_text_color(*black)
+    pdf.multi_cell(0, 5, client_name)
+    
+    pdf.set_text_color(*gray)
+    pdf.cell(30, 5, "ИСПОЛНИТЕЛЬ:", ln=False)
+    pdf.set_text_color(*black)
+    pdf.multi_cell(0, 5, legal_entity['name'])
+    
+    pdf.set_text_color(*gray)
+    pdf.cell(30, 5, "СРОК КП:", ln=False)
+    pdf.set_text_color(*black)
+    pdf.cell(0, 5, f"{validity_days} календарных дней", ln=True)
+    pdf.ln(5)
+    
+    # 1. ОПИСАНИЕ ПРОЕКТА
+    project_description = kp_data.get("project_description", "")
+    features = kp_data.get("features", [])
+    
+    if project_description or features:
+        pdf.set_fill_color(245, 245, 245)
+        pdf.set_font(font_name, "B", 10)
+        pdf.cell(0, 7, "1. ОПИСАНИЕ ПРОЕКТА", ln=True, fill=True)
+        pdf.ln(2)
+        
+        pdf.set_font(font_name, "", 9)
+        if project_description:
+            pdf.multi_cell(0, 5, project_description)
+            pdf.ln(2)
+        
+        for feature in features:
+            pdf.cell(5, 5, "", ln=False)
+            pdf.multi_cell(0, 5, f"✓ {feature}")
+        pdf.ln(3)
+    
+    # 2. ОБОРУДОВАНИЕ
+    pdf.set_font(font_name, "B", 10)
+    pdf.set_fill_color(245, 245, 245)
+    section_num = 2 if (project_description or features) else 1
+    pdf.cell(0, 7, f"{section_num}. КОМПЛЕКТАЦИЯ ОБОРУДОВАНИЯ", ln=True, fill=True)
+    pdf.ln(2)
+    
+    # Таблица оборудования
+    col_widths = [10, 90, 15, 15, 25, 30]
+    headers = ["№", "Наименование", "Кол.", "Ед.", "Цена", "Сумма"]
+    
+    pdf.set_font(font_name, "B", 8)
+    pdf.set_fill_color(240, 240, 240)
+    for i, (w, h) in enumerate(zip(col_widths, headers)):
+        pdf.cell(w, 6, h, border=1, fill=True, align="C")
+    pdf.ln()
+    
+    pdf.set_font(font_name, "", 8)
+    for idx, m in enumerate(materials, 1):
+        summa = m["quantity"] * m["price"]
+        row = [str(idx), m["name"][:50], str(int(m["quantity"])), m["unit"], format_price(m["price"]), format_price(summa)]
+        aligns = ["C", "L", "C", "C", "R", "R"]
+        for w, val, align in zip(col_widths, row, aligns):
+            pdf.cell(w, 5, val, border=1, align=align)
+        pdf.ln()
+    
+    pdf.set_font(font_name, "B", 9)
+    pdf.cell(0, 6, f"ИТОГО ОБОРУДОВАНИЕ: {format_price(total_materials)} руб", ln=True, align="R")
+    pdf.ln(3)
+    
+    # 3. РАБОТЫ
+    section_num += 1
+    pdf.set_font(font_name, "B", 10)
+    pdf.set_fill_color(245, 245, 245)
+    pdf.cell(0, 7, f"{section_num}. МОНТАЖНЫЕ И ПУСКОНАЛАДОЧНЫЕ РАБОТЫ", ln=True, fill=True)
+    pdf.ln(2)
+    
+    pdf.set_font(font_name, "B", 8)
+    pdf.set_fill_color(240, 240, 240)
+    for i, (w, h) in enumerate(zip(col_widths, headers)):
+        pdf.cell(w, 6, h, border=1, fill=True, align="C")
+    pdf.ln()
+    
+    pdf.set_font(font_name, "", 8)
+    for idx, w in enumerate(works, 1):
+        summa = w["quantity"] * w["price"]
+        row = [str(idx), w["name"][:50], str(int(w["quantity"])), w["unit"], format_price(w["price"]), format_price(summa)]
+        aligns = ["C", "L", "C", "C", "R", "R"]
+        for width, val, align in zip(col_widths, row, aligns):
+            pdf.cell(width, 5, val, border=1, align=align)
+        pdf.ln()
+    
+    pdf.set_font(font_name, "B", 9)
+    pdf.cell(0, 6, f"ИТОГО РАБОТЫ: {format_price(total_works)} руб", ln=True, align="R")
+    pdf.ln(3)
+    
+    # 4. ОБЩАЯ СТОИМОСТЬ
+    section_num += 1
+    pdf.set_font(font_name, "B", 10)
+    pdf.set_fill_color(245, 245, 245)
+    pdf.cell(0, 7, f"{section_num}. ОБЩАЯ СТОИМОСТЬ ПРОЕКТА", ln=True, fill=True)
+    pdf.ln(2)
+    
+    pdf.set_font(font_name, "", 10)
+    pdf.cell(120, 6, "Оборудование и материалы:", ln=False)
+    pdf.cell(0, 6, f"{format_price(total_materials)} руб", ln=True, align="R")
+    pdf.cell(120, 6, "Монтажные работы:", ln=False)
+    pdf.cell(0, 6, f"{format_price(total_works)} руб", ln=True, align="R")
+    
+    pdf.set_draw_color(*black)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    
+    pdf.set_font(font_name, "B", 12)
+    pdf.cell(120, 8, "ИТОГО:", ln=False)
+    pdf.cell(0, 8, f"{format_price(total)} руб", ln=True, align="R")
+    
+    pdf.set_font(font_name, "", 9)
+    if vat_rate:
+        pdf.cell(0, 5, f"В том числе НДС ({vat_rate}%): {format_price(vat_amount)} руб", ln=True, align="R")
+    else:
+        pdf.cell(0, 5, "НДС не облагается", ln=True, align="R")
+    
+    pdf.ln(2)
+    pdf.set_text_color(*gray)
+    pdf.multi_cell(0, 5, f"Сумма прописью: {num_to_words(total)}")
+    pdf.set_text_color(*black)
+    pdf.ln(3)
+    
+    # 5. ЭТАПЫ РЕАЛИЗАЦИИ
+    stages = kp_data.get("stages", [])
+    if stages:
+        section_num += 1
+        pdf.set_font(font_name, "B", 10)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(0, 7, f"{section_num}. ЭТАПЫ РЕАЛИЗАЦИИ ПРОЕКТА", ln=True, fill=True)
+        pdf.ln(2)
+        
+        stage_widths = [50, 25, 115]
+        stage_headers = ["Этап", "Срок", "Описание"]
+        
+        pdf.set_font(font_name, "B", 8)
+        pdf.set_fill_color(240, 240, 240)
+        for w, h in zip(stage_widths, stage_headers):
+            pdf.cell(w, 6, h, border=1, fill=True, align="C")
+        pdf.ln()
+        
+        pdf.set_font(font_name, "", 8)
+        for s in stages:
+            pdf.cell(stage_widths[0], 5, s["name"][:25], border=1)
+            pdf.cell(stage_widths[1], 5, s["duration"], border=1, align="C")
+            pdf.cell(stage_widths[2], 5, s["description"][:60], border=1)
+            pdf.ln()
+        
+        total_duration = kp_data.get("total_duration", "")
+        if total_duration:
+            pdf.set_font(font_name, "", 9)
+            pdf.cell(0, 6, f"Общий срок: {total_duration}", ln=True)
+        pdf.ln(3)
+    
+    # 6. ГАРАНТИИ
+    warranty = kp_data.get("warranty", {})
+    if warranty:
+        section_num += 1
+        pdf.set_font(font_name, "B", 10)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(0, 7, f"{section_num}. ГАРАНТИИ И СЕРВИС", ln=True, fill=True)
+        pdf.ln(2)
+        
+        pdf.set_font(font_name, "", 9)
+        if warranty.get("equipment_months"):
+            pdf.multi_cell(0, 5, f"✓ Гарантия на оборудование: {warranty['equipment_months']} месяцев")
+        if warranty.get("works_months"):
+            pdf.multi_cell(0, 5, f"✓ Гарантия на монтажные работы: {warranty['works_months']} месяцев")
+        for add in warranty.get("additional", []):
+            pdf.multi_cell(0, 5, f"✓ {add}")
+        pdf.ln(3)
+    
+    # 7. УСЛОВИЯ ОПЛАТЫ
+    payment_terms = kp_data.get("payment_terms", "")
+    if payment_terms:
+        section_num += 1
+        pdf.set_font(font_name, "B", 10)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(0, 7, f"{section_num}. УСЛОВИЯ ОПЛАТЫ", ln=True, fill=True)
+        pdf.ln(2)
+        
+        pdf.set_font(font_name, "", 9)
+        pdf.multi_cell(0, 5, payment_terms)
+        pdf.ln(3)
+    
+    # 8. ДОПОЛНИТЕЛЬНЫЕ ОПЦИИ
+    options = kp_data.get("options", [])
+    if options:
+        section_num += 1
+        pdf.set_font(font_name, "B", 10)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(0, 7, f"{section_num}. ДОПОЛНИТЕЛЬНЫЕ ОПЦИИ (по запросу)", ln=True, fill=True)
+        pdf.ln(2)
+        
+        opt_widths = [140, 50]
+        pdf.set_font(font_name, "B", 8)
+        pdf.set_fill_color(240, 240, 240)
+        pdf.cell(opt_widths[0], 6, "Опция", border=1, fill=True, align="C")
+        pdf.cell(opt_widths[1], 6, "Цена", border=1, fill=True, align="C")
+        pdf.ln()
+        
+        pdf.set_font(font_name, "", 8)
+        for o in options:
+            pdf.cell(opt_widths[0], 5, o["name"][:70], border=1)
+            pdf.cell(opt_widths[1], 5, o["price"], border=1, align="R")
+            pdf.ln()
+        pdf.ln(3)
+    
+    # КОНТАКТЫ
+    pdf.ln(3)
+    pdf.set_font(font_name, "B", 10)
+    pdf.cell(0, 6, "КОНТАКТЫ ДЛЯ СВЯЗИ:", ln=True)
+    pdf.set_font(font_name, "", 9)
+    
+    manager_name = kp_data.get("manager_name", "")
+    manager_phone = kp_data.get("manager_phone", "") or legal_entity.get("phone", "")
+    manager_email = kp_data.get("manager_email", "")
+    
+    if manager_name:
+        pdf.cell(0, 5, f"Менеджер проекта: {manager_name}", ln=True)
+    pdf.cell(0, 5, f"Телефон: {manager_phone}", ln=True)
+    if manager_email:
+        pdf.cell(0, 5, f"Email: {manager_email}", ln=True)
+    
+    # Подпись
+    pdf.ln(10)
+    y_sign = pdf.get_y()
+    
+    pdf.set_font(font_name, "", 10)
+    pdf.cell(40, 6, legal_entity["signer_title"], ln=False)
+    pdf.cell(80, 6, "", ln=False)
+    pdf.cell(0, 6, f"_________________ / {legal_entity['signer']} /", ln=True)
+    
+    # Печать и подпись
+    stamp_path = stamps_dir / legal_entity.get("stamp", "")
+    sign_path = stamps_dir / legal_entity.get("sign", "")
+    
+    if stamp_path.exists():
+        try:
+            pdf.image(str(stamp_path), x=60, y=y_sign - 5, h=25)
+        except:
+            pass
+    if sign_path.exists():
+        try:
+            pdf.image(str(sign_path), x=100, y=y_sign - 3, h=18)
+        except:
+            pass
+    
+    # Сохраняем PDF
+    pdf.output(str(pdf_path))
+    
+    return total_materials, total_works, total
+
+async def generate_kp_pdf(kp_data: dict, user: dict) -> dict:
+    """Генерирует PDF коммерческого предложения"""
+    legal_entity_id = kp_data.get("legal_entity_id")
+    legal_entity = LEGAL_ENTITIES.get(legal_entity_id)
+    
+    if not legal_entity:
+        return {"error": f"Юрлицо {legal_entity_id} не найдено"}
+    
+    kp_number = await get_next_kp_number()
+    
+    # Создаём директорию для КП
+    kp_dir = Path("/tmp/kp")
+    kp_dir.mkdir(exist_ok=True)
+    pdf_path = kp_dir / f"kp_{kp_number}.pdf"
+    
+    # Генерируем PDF с помощью fpdf2
+    try:
+        total_materials, total_works, total = generate_kp_pdf_file(kp_data, legal_entity, kp_number, pdf_path)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Ошибка генерации PDF: {str(e)}"}
+    
+    # Сохраняем в базу
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO kp_documents (kp_number, user_id, user_name, legal_entity_id, client_name, data, total_materials, total_works, total)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ''', kp_number, user["id"], user["name"], legal_entity_id, 
+                kp_data.get("client_name", ""), json.dumps(kp_data),
+                total_materials, total_works, total)
+    
+    return {
+        "success": True,
+        "kp_number": kp_number,
+        "download_url": f"/api/kp/{kp_number}/download",
+        "total_materials": total_materials,
+        "total_works": total_works,
+        "total": total
+    }
+
+async def handle_tool_use(tool_name: str, tool_input: dict, user: dict) -> str:
+    """Обрабатывает вызов инструмента"""
+    if tool_name == "generate_kp":
+        result = await generate_kp_pdf(tool_input, user)
+        if result.get("error"):
+            return f"Ошибка генерации КП: {result['error']}"
+        return f"""✅ КП № {result['kp_number']} успешно сформировано!
+
+📊 **Итого:**
+- Материалы: {format_price(result['total_materials'])} руб
+- Работы: {format_price(result['total_works'])} руб  
+- **Всего: {format_price(result['total'])} руб**
+
+📥 [Скачать PDF]({result['download_url']})"""
+    return "Неизвестный инструмент"
+
+# ── Protected API endpoints ──
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest, request: Request):
+    user = require_auth(request)
+    if not API_KEY:
+        raise HTTPException(500, "ANTHROPIC_API_KEY не настроен")
+
+    session_id, messages = await get_or_create_session(req.session_id, user["id"], user["name"])
+    messages.append({"role": "user", "content": req.message})
+    await save_message(session_id, "user", req.message, title=req.message)
+
+    recent_messages = messages[-20:]
+    client = anthropic.Anthropic(api_key=API_KEY)
+
+    try:
+        response = client.messages.create(
+            model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+            messages=recent_messages,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}]
+        )
+    except anthropic.APIError as e:
+        raise HTTPException(500, f"Ошибка Claude API: {str(e)}")
+
+    reply_text = ""
+    sources = []
+    for block in response.content:
+        if block.type == "text":
+            reply_text += block.text
+        elif block.type == "web_search_tool_result":
+            if hasattr(block, 'content'):
+                for result in block.content:
+                    if hasattr(result, 'url') and hasattr(result, 'title'):
+                        sources.append({"url": result.url, "title": result.title})
+
+    messages.append({"role": "assistant", "content": reply_text})
+    await save_message(session_id, "assistant", reply_text)
+    return ChatResponse(reply=reply_text, session_id=session_id, sources=sources)
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request):
+    user = require_auth(request)
+    if not API_KEY:
+        raise HTTPException(500, "ANTHROPIC_API_KEY не настроен")
+
+    session_id, messages = await get_or_create_session(req.session_id, user["id"], user["name"])
+    messages.append({"role": "user", "content": req.message})
+    await save_message(session_id, "user", req.message, title=req.message)
+
+    recent_messages = messages[-20:]
+    client = anthropic.Anthropic(api_key=API_KEY)
+    
+    # Список инструментов
+    tools = [
+        {"type": "web_search_20250305", "name": "web_search", "max_uses": 2},
+        KP_TOOL
+    ]
+
+    async def generate():
+        full_reply = ""
+        tool_use_block = None
+        total_input_tokens = 0
+        total_output_tokens = 0
+        has_web_search = False
+        has_tool_use = False
+        
+        try:
+            with client.messages.stream(
+                model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+                messages=recent_messages,
+                tools=tools
+            ) as stream:
+                for event in stream:
+                    if hasattr(event, 'type'):
+                        if event.type == 'content_block_delta':
+                            if hasattr(event.delta, 'text') and event.delta.text is not None:
+                                full_reply += event.delta.text
+                                yield f"data: {json.dumps({'type': 'text', 'content': event.delta.text})}\n\n"
+                        elif event.type == 'content_block_start':
+                            if hasattr(event.content_block, 'type'):
+                                if event.content_block.type == 'server_tool_use':
+                                    has_web_search = True
+                                    yield f"data: {json.dumps({'type': 'searching', 'content': 'Ищу информацию...'})}\n\n"
+                                elif event.content_block.type == 'web_search_tool_result':
+                                    yield f"data: {json.dumps({'type': 'search_done', 'content': 'Найдено!'})}\n\n"
+                                elif event.content_block.type == 'tool_use':
+                                    has_tool_use = True
+                                    tool_use_block = {
+                                        "id": event.content_block.id,
+                                        "name": event.content_block.name,
+                                        "input": {}
+                                    }
+                                    yield f"data: {json.dumps({'type': 'tool_start', 'content': f'Генерирую КП...'})}\n\n"
+                        elif event.type == 'content_block_stop':
+                            pass
+                
+                # Получаем финальное сообщение для проверки tool_use
+                final_message = stream.get_final_message()
+                
+                # Собираем статистику токенов
+                if hasattr(final_message, 'usage'):
+                    total_input_tokens += final_message.usage.input_tokens
+                    total_output_tokens += final_message.usage.output_tokens
+                
+                # Проверяем на tool_use
+                for block in final_message.content:
+                    if block.type == "tool_use" and block.name == "generate_kp":
+                        yield f"data: {json.dumps({'type': 'generating_kp', 'content': 'Формирую КП...'})}\n\n"
+                        
+                        # Выполняем генерацию КП
+                        tool_result = await handle_tool_use(block.name, block.input, user)
+                        
+                        # Отправляем результат обратно Claude для формирования ответа
+                        tool_messages = recent_messages + [
+                            {"role": "assistant", "content": final_message.content},
+                            {
+                                "role": "user",
+                                "content": [{
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": tool_result
+                                }]
+                            }
+                        ]
+                        
+                        # Получаем финальный ответ
+                        final_response = client.messages.create(
+                            model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+                            messages=tool_messages,
+                            tools=tools
+                        )
+                        
+                        # Добавляем токены от второго запроса
+                        if hasattr(final_response, 'usage'):
+                            total_input_tokens += final_response.usage.input_tokens
+                            total_output_tokens += final_response.usage.output_tokens
+                        
+                        for final_block in final_response.content:
+                            if final_block.type == "text":
+                                full_reply += final_block.text
+                                yield f"data: {json.dumps({'type': 'text', 'content': final_block.text})}\n\n"
+
+            # Сохраняем статистику токенов
+            await save_token_usage(
+                user["id"], user["name"], session_id,
+                total_input_tokens, total_output_tokens,
+                has_web_search, has_tool_use
+            )
+            
+            await save_message(session_id, "assistant", full_reply)
+            messages.append({"role": "assistant", "content": full_reply})
+            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+@app.get("/api/sessions")
+async def list_sessions(request: Request):
+    user = require_auth(request)
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT s.id, s.title, s.created_at, s.updated_at,
+                   (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as msg_count
+                   FROM chat_sessions s WHERE s.user_id=$1 ORDER BY s.updated_at DESC LIMIT 50''',
+                user["id"]
+            )
+            return [
+                {"id": r['id'], "title": r['title'] or "Новый чат",
+                 "created_at": r['created_at'].isoformat(), "updated_at": r['updated_at'].isoformat(),
+                 "message_count": r['msg_count']}
+                for r in rows
+            ]
+    return []
+
+@app.get("/api/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str, request: Request):
+    require_auth(request)
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                'SELECT role, content, created_at FROM chat_messages WHERE session_id=$1 ORDER BY id', session_id
+            )
+            if not rows:
+                raise HTTPException(404, "Сессия не найдена")
+            return [{"role": r['role'], "content": r['content'], "time": r['created_at'].strftime('%H:%M')} for r in rows]
+    raise HTTPException(404, "Сессия не найдена")
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str, request: Request):
+    user = require_auth(request)
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            await conn.execute('DELETE FROM chat_sessions WHERE id=$1 AND user_id=$2', session_id, user["id"])
+            return {"status": "deleted"}
+    raise HTTPException(404, "Сессия не найдена")
+
+# ── KP Download ──
+@app.get("/api/kp/{kp_number}/download")
+async def download_kp(kp_number: str, request: Request):
+    """Скачать PDF коммерческого предложения"""
+    user = require_auth(request)
+    
+    pdf_path = Path(f"/tmp/kp/kp_{kp_number}.pdf")
+    if not pdf_path.exists():
+        raise HTTPException(404, "КП не найдено")
+    
+    # Проверяем права доступа
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT user_id, client_name FROM kp_documents WHERE kp_number=$1',
+                kp_number
+            )
+            if not row:
+                raise HTTPException(404, "КП не найдено в базе")
+            # Можно добавить проверку user_id если нужно ограничить доступ
+    
+    # Получаем имя клиента для имени файла
+    client_name = row['client_name'] if row else "client"
+    filename = f"KP_{kp_number}_{client_name.replace(' ', '_')}.pdf"
+    
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+@app.get("/api/kp")
+async def list_kp(request: Request):
+    """Список КП пользователя"""
+    user = require_auth(request)
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT kp_number, legal_entity_id, client_name, total, created_at
+                   FROM kp_documents WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50''',
+                user["id"]
+            )
+            return [
+                {
+                    "kp_number": r['kp_number'],
+                    "legal_entity": LEGAL_ENTITIES.get(r['legal_entity_id'], {}).get("name", r['legal_entity_id']),
+                    "client_name": r['client_name'],
+                    "total": float(r['total']) if r['total'] else 0,
+                    "created_at": r['created_at'].isoformat(),
+                    "download_url": f"/api/kp/{r['kp_number']}/download"
+                }
+                for r in rows
+            ]
+    return []
+
+# ── Admin API ──
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request):
+    """Список всех пользователей с статистикой"""
+    require_admin(request)
+    if not db_pool:
+        return []
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch('''
+            SELECT 
+                s.user_id,
+                s.user_name,
+                COUNT(DISTINCT s.id) as chat_count,
+                MAX(s.updated_at) as last_activity,
+                COALESCE(SUM(t.total_tokens), 0) as total_tokens,
+                COALESCE(SUM(t.input_tokens), 0) as input_tokens,
+                COALESCE(SUM(t.output_tokens), 0) as output_tokens,
+                COUNT(DISTINCT CASE WHEN t.has_web_search THEN t.id END) as web_search_count
+            FROM chat_sessions s
+            LEFT JOIN token_usage t ON s.user_id = t.user_id
+            WHERE s.user_id != ''
+            GROUP BY s.user_id, s.user_name
+            ORDER BY last_activity DESC
+        ''')
+        return [
+            {
+                "user_id": r['user_id'],
+                "user_name": r['user_name'] or "Без имени",
+                "chat_count": r['chat_count'],
+                "last_activity": r['last_activity'].isoformat() if r['last_activity'] else None,
+                "total_tokens": r['total_tokens'],
+                "input_tokens": r['input_tokens'],
+                "output_tokens": r['output_tokens'],
+                "web_search_count": r['web_search_count']
+            }
+            for r in rows
+        ]
+
+@app.get("/api/admin/users/{user_id}/chats")
+async def admin_user_chats(user_id: str, request: Request):
+    """Список чатов конкретного пользователя"""
+    require_admin(request)
+    if not db_pool:
+        return []
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch('''
+            SELECT s.id, s.title, s.created_at, s.updated_at,
+                   (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as msg_count
+            FROM chat_sessions s 
+            WHERE s.user_id = $1 
+            ORDER BY s.updated_at DESC LIMIT 100
+        ''', user_id)
+        return [
+            {
+                "id": r['id'],
+                "title": r['title'] or "Новый чат",
+                "created_at": r['created_at'].isoformat(),
+                "updated_at": r['updated_at'].isoformat(),
+                "message_count": r['msg_count']
+            }
+            for r in rows
+        ]
+
+@app.get("/api/admin/chats/{session_id}")
+async def admin_get_chat(session_id: str, request: Request):
+    """Просмотр конкретного чата (для админа)"""
+    require_admin(request)
+    if not db_pool:
+        raise HTTPException(404, "База данных недоступна")
+    
+    async with db_pool.acquire() as conn:
+        # Получаем информацию о сессии
+        session = await conn.fetchrow(
+            'SELECT user_id, user_name, title, created_at FROM chat_sessions WHERE id=$1',
+            session_id
+        )
+        if not session:
+            raise HTTPException(404, "Чат не найден")
+        
+        # Получаем сообщения
+        messages = await conn.fetch(
+            'SELECT role, content, created_at FROM chat_messages WHERE session_id=$1 ORDER BY id',
+            session_id
+        )
+        
+        return {
+            "session_id": session_id,
+            "user_id": session['user_id'],
+            "user_name": session['user_name'],
+            "title": session['title'],
+            "created_at": session['created_at'].isoformat(),
+            "messages": [
+                {
+                    "role": m['role'],
+                    "content": m['content'],
+                    "time": m['created_at'].strftime('%d.%m.%Y %H:%M')
+                }
+                for m in messages
+            ]
+        }
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request, days: int = 30):
+    """Общая статистика за период"""
+    require_admin(request)
+    if not db_pool:
+        return {}
+    
+    async with db_pool.acquire() as conn:
+        # Общая статистика
+        totals = await conn.fetchrow(f'''
+            SELECT 
+                COUNT(*) as total_requests,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(input_tokens), 0) as input_tokens,
+                COALESCE(SUM(output_tokens), 0) as output_tokens,
+                COUNT(CASE WHEN has_web_search THEN 1 END) as web_searches,
+                COUNT(CASE WHEN has_tool_use THEN 1 END) as tool_uses
+            FROM token_usage
+            WHERE created_at > NOW() - INTERVAL '{days} days'
+        ''')
+        
+        # По дням
+        daily = await conn.fetch(f'''
+            SELECT 
+                DATE(created_at) as date,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens
+            FROM token_usage
+            WHERE created_at > NOW() - INTERVAL '{days} days'
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC
+        ''')
+        
+        # Топ пользователей
+        top_users = await conn.fetch(f'''
+            SELECT 
+                user_id,
+                user_name,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens
+            FROM token_usage
+            WHERE created_at > NOW() - INTERVAL '{days} days'
+            GROUP BY user_id, user_name
+            ORDER BY tokens DESC
+            LIMIT 10
+        ''')
+        
+        return {
+            "period_days": days,
+            "totals": {
+                "requests": totals['total_requests'],
+                "total_tokens": totals['total_tokens'],
+                "input_tokens": totals['input_tokens'],
+                "output_tokens": totals['output_tokens'],
+                "web_searches": totals['web_searches'],
+                "tool_uses": totals['tool_uses']
+            },
+            "daily": [
+                {"date": r['date'].isoformat(), "requests": r['requests'], "tokens": r['tokens']}
+                for r in daily
+            ],
+            "top_users": [
+                {"user_id": r['user_id'], "user_name": r['user_name'], "requests": r['requests'], "tokens": r['tokens']}
+                for r in top_users
+            ]
+        }
+
+# ── Admin Page ──
+@app.get("/admin")
+async def admin_page(request: Request):
+    """Страница администратора"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not is_admin(user):
+        return HTMLResponse("<h1>Доступ запрещён</h1><p>У вас нет прав администратора.</p>", status_code=403)
+    
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админка — Mos-GSM AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Roboto',sans-serif;background:#F5F3EF;color:#1A1A1A;min-height:100vh}
+.header{background:#1A1A1A;color:#F3C04D;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:20px;font-weight:500}
+.header a{color:#F3C04D;text-decoration:none;font-size:14px}
+.container{max-width:1400px;margin:0 auto;padding:24px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.stat-card h3{font-size:12px;color:#6B6560;text-transform:uppercase;margin-bottom:8px}
+.stat-card .value{font-size:28px;font-weight:700;color:#1A1A1A}
+.stat-card .sub{font-size:12px;color:#9A9590;margin-top:4px}
+.section{background:#fff;border-radius:12px;padding:20px;margin-bottom:24px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.section h2{font-size:16px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E8E6E3}
+table{width:100%;border-collapse:collapse}
+th,td{padding:12px;text-align:left;border-bottom:1px solid #E8E6E3}
+th{font-size:12px;color:#6B6560;text-transform:uppercase;font-weight:500}
+td{font-size:14px}
+tr:hover{background:#F9F8F6}
+.user-link{color:#C9982E;text-decoration:none;font-weight:500}
+.user-link:hover{text-decoration:underline}
+.chat-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;overflow:auto;padding:40px}
+.chat-modal.active{display:flex;justify-content:center}
+.chat-content{background:#fff;border-radius:16px;max-width:800px;width:100%;max-height:90vh;overflow:auto}
+.chat-header{padding:20px;border-bottom:1px solid #E8E6E3;display:flex;justify-content:space-between;align-items:center}
+.chat-header h3{font-size:16px}
+.close-btn{background:none;border:none;font-size:24px;cursor:pointer;color:#6B6560}
+.chat-messages{padding:20px}
+.message{margin-bottom:16px;padding:12px 16px;border-radius:12px;max-width:85%}
+.message.user{background:#F3C04D;margin-left:auto}
+.message.assistant{background:#F5F3EF}
+.message .role{font-size:11px;color:#6B6560;margin-bottom:4px}
+.message .time{font-size:10px;color:#9A9590;margin-top:6px}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tab{padding:8px 16px;background:#E8E6E3;border:none;border-radius:8px;cursor:pointer;font-size:14px}
+.tab.active{background:#1A1A1A;color:#F3C04D}
+.back-btn{background:#E8E6E3;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:16px}
+#userChats{display:none}
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>📊 Панель администратора</h1>
+    <a href="/">← Вернуться в чат</a>
+</div>
+
+<div class="container">
+    <div id="stats-section">
+        <div class="stats-grid" id="statsGrid"></div>
+        
+        <div class="section">
+            <h2>👥 Сотрудники</h2>
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Чатов</th>
+                        <th>Токенов</th>
+                        <th>Веб-поиск</th>
+                        <th>Последняя активность</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>📈 По дням (последние 30 дней)</h2>
+            <table id="dailyTable">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Запросов</th>
+                        <th>Токенов</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div id="userChats">
+        <button class="back-btn" onclick="showMainStats()">← Назад к списку</button>
+        <div class="section">
+            <h2 id="userChatsTitle">Чаты пользователя</h2>
+            <table id="chatsTable">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Сообщений</th>
+                        <th>Создан</th>
+                        <th>Обновлён</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="chat-modal" id="chatModal">
+    <div class="chat-content">
+        <div class="chat-header">
+            <h3 id="chatTitle">Чат</h3>
+            <button class="close-btn" onclick="closeChat()">×</button>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+    </div>
+</div>
+
+<script>
+async function loadStats() {
+    const resp = await fetch('/api/admin/stats?days=30');
+    const data = await resp.json();
+    
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card">
+            <h3>Запросов</h3>
+            <div class="value">${data.totals.requests.toLocaleString()}</div>
+            <div class="sub">за 30 дней</div>
+        </div>
+        <div class="stat-card">
+            <h3>Токенов</h3>
+            <div class="value">${data.totals.total_tokens.toLocaleString()}</div>
+            <div class="sub">входящих: ${data.totals.input_tokens.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+            <h3>Веб-поиск</h3>
+            <div class="value">${data.totals.web_searches.toLocaleString()}</div>
+            <div class="sub">запросов с поиском</div>
+        </div>
+        <div class="stat-card">
+            <h3>Генерация КП</h3>
+            <div class="value">${data.totals.tool_uses.toLocaleString()}</div>
+            <div class="sub">документов</div>
+        </div>
+    `;
+    
+    // Daily table
+    const dailyTbody = document.querySelector('#dailyTable tbody');
+    dailyTbody.innerHTML = data.daily.slice(0, 14).map(d => `
+        <tr>
+            <td>${new Date(d.date).toLocaleDateString('ru-RU')}</td>
+            <td>${d.requests}</td>
+            <td>${d.tokens.toLocaleString()}</td>
+        </tr>
+    `).join('');
+}
+
+async function loadUsers() {
+    const resp = await fetch('/api/admin/users');
+    const users = await resp.json();
+    
+    const tbody = document.querySelector('#usersTable tbody');
+    tbody.innerHTML = users.map(u => `
+        <tr>
+            <td><a href="#" class="user-link" onclick="showUserChats('${u.user_id}', '${u.user_name}')">${u.user_name}</a></td>
+            <td>${u.chat_count}</td>
+            <td>${u.total_tokens.toLocaleString()}</td>
+            <td>${u.web_search_count}</td>
+            <td>${u.last_activity ? new Date(u.last_activity).toLocaleString('ru-RU') : '—'}</td>
+        </tr>
+    `).join('');
+}
+
+async function showUserChats(userId, userName) {
+    document.getElementById('stats-section').style.display = 'none';
+    document.getElementById('userChats').style.display = 'block';
+    document.getElementById('userChatsTitle').textContent = `Чаты: ${userName}`;
+    
+    const resp = await fetch(`/api/admin/users/${userId}/chats`);
+    const chats = await resp.json();
+    
+    const tbody = document.querySelector('#chatsTable tbody');
+    tbody.innerHTML = chats.map(c => `
+        <tr>
+            <td><a href="#" class="user-link" onclick="openChat('${c.id}')">${c.title}</a></td>
+            <td>${c.message_count}</td>
+            <td>${new Date(c.created_at).toLocaleString('ru-RU')}</td>
+            <td>${new Date(c.updated_at).toLocaleString('ru-RU')}</td>
+        </tr>
+    `).join('');
+}
+
+function showMainStats() {
+    document.getElementById('stats-section').style.display = 'block';
+    document.getElementById('userChats').style.display = 'none';
+}
+
+async function openChat(sessionId) {
+    const resp = await fetch(`/api/admin/chats/${sessionId}`);
+    const chat = await resp.json();
+    
+    document.getElementById('chatTitle').textContent = chat.title || 'Чат';
+    document.getElementById('chatMessages').innerHTML = chat.messages.map(m => `
+        <div class="message ${m.role}">
+            <div class="role">${m.role === 'user' ? '👤 Пользователь' : '🤖 AI'}</div>
+            <div class="text">${m.content.replace(/\\n/g, '<br>')}</div>
+            <div class="time">${m.time}</div>
+        </div>
+    `).join('');
+    
+    document.getElementById('chatModal').classList.add('active');
+}
+
+function closeChat() {
+    document.getElementById('chatModal').classList.remove('active');
+}
+
+document.getElementById('chatModal').addEventListener('click', e => {
+    if (e.target.id === 'chatModal') closeChat();
+});
+
+// Init
+loadStats();
+loadUsers();
+</script>
+</body>
+</html>""")
+
+# ── Frontend ──
+@app.get("/")
+async def serve_frontend(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    return FileResponse("static/index.html")
+
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
