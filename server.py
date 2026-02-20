@@ -38,6 +38,10 @@ BITRIX_REDIRECT_URI = os.environ.get("BITRIX_REDIRECT_URI", "")
 BITRIX_DOMAIN = os.environ.get("BITRIX_DOMAIN", "svyaz.bitrix24.ru")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 
+# ── Admin Config ──
+# Bitrix ID пользователей с правами администратора
+ADMIN_USER_IDS = os.environ.get("ADMIN_USER_IDS", "9").split(",")  # По умолчанию: Андрей Конторин
+
 # ── System Prompt ──
 SYSTEM_PROMPT = """Ты — TechBase AI, экспертный технический ассистент компании Mos-GSM.
 Твоя специализация: СКУД (системы контроля и управления доступом) и СВН (системы видеонаблюдения).
@@ -305,6 +309,21 @@ async def init_db():
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
                 CREATE INDEX IF NOT EXISTS idx_kp_user ON kp_documents(user_id);
+                
+                CREATE TABLE IF NOT EXISTS token_usage (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT,
+                    session_id TEXT,
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    total_tokens INTEGER DEFAULT 0,
+                    has_web_search BOOLEAN DEFAULT FALSE,
+                    has_tool_use BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_token_user ON token_usage(user_id);
+                CREATE INDEX IF NOT EXISTS idx_token_date ON token_usage(created_at);
             ''')
             # Migration: add new columns
             for col in [
@@ -348,6 +367,32 @@ def require_auth(request: Request) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
     return user
+
+def is_admin(user: dict) -> bool:
+    """Проверяет является ли пользователь администратором"""
+    return str(user.get("id", "")) in ADMIN_USER_IDS
+
+def require_admin(request: Request) -> dict:
+    """Требует права администратора"""
+    user = require_auth(request)
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return user
+
+async def save_token_usage(user_id: str, user_name: str, session_id: str, 
+                           input_tokens: int, output_tokens: int, 
+                           has_web_search: bool = False, has_tool_use: bool = False):
+    """Сохраняет статистику использования токенов"""
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                await conn.execute('''
+                    INSERT INTO token_usage (user_id, user_name, session_id, input_tokens, output_tokens, total_tokens, has_web_search, has_tool_use)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ''', user_id, user_name, session_id, input_tokens, output_tokens, 
+                    input_tokens + output_tokens, has_web_search, has_tool_use)
+        except Exception as e:
+            print(f"Error saving token usage: {e}")
 
 # ── Auth routes ──
 @app.get("/auth/login")
@@ -1007,6 +1052,10 @@ async def chat_stream(req: ChatRequest, request: Request):
     async def generate():
         full_reply = ""
         tool_use_block = None
+        total_input_tokens = 0
+        total_output_tokens = 0
+        has_web_search = False
+        has_tool_use = False
         
         try:
             with client.messages.stream(
@@ -1023,10 +1072,12 @@ async def chat_stream(req: ChatRequest, request: Request):
                         elif event.type == 'content_block_start':
                             if hasattr(event.content_block, 'type'):
                                 if event.content_block.type == 'server_tool_use':
+                                    has_web_search = True
                                     yield f"data: {json.dumps({'type': 'searching', 'content': 'Ищу информацию...'})}\n\n"
                                 elif event.content_block.type == 'web_search_tool_result':
                                     yield f"data: {json.dumps({'type': 'search_done', 'content': 'Найдено!'})}\n\n"
                                 elif event.content_block.type == 'tool_use':
+                                    has_tool_use = True
                                     tool_use_block = {
                                         "id": event.content_block.id,
                                         "name": event.content_block.name,
@@ -1038,6 +1089,11 @@ async def chat_stream(req: ChatRequest, request: Request):
                 
                 # Получаем финальное сообщение для проверки tool_use
                 final_message = stream.get_final_message()
+                
+                # Собираем статистику токенов
+                if hasattr(final_message, 'usage'):
+                    total_input_tokens += final_message.usage.input_tokens
+                    total_output_tokens += final_message.usage.output_tokens
                 
                 # Проверяем на tool_use
                 for block in final_message.content:
@@ -1067,11 +1123,23 @@ async def chat_stream(req: ChatRequest, request: Request):
                             tools=tools
                         )
                         
+                        # Добавляем токены от второго запроса
+                        if hasattr(final_response, 'usage'):
+                            total_input_tokens += final_response.usage.input_tokens
+                            total_output_tokens += final_response.usage.output_tokens
+                        
                         for final_block in final_response.content:
                             if final_block.type == "text":
                                 full_reply += final_block.text
                                 yield f"data: {json.dumps({'type': 'text', 'content': final_block.text})}\n\n"
 
+            # Сохраняем статистику токенов
+            await save_token_usage(
+                user["id"], user["name"], session_id,
+                total_input_tokens, total_output_tokens,
+                has_web_search, has_tool_use
+            )
+            
             await save_message(session_id, "assistant", full_reply)
             messages.append({"role": "assistant", "content": full_reply})
             yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
@@ -1177,6 +1245,413 @@ async def list_kp(request: Request):
                 for r in rows
             ]
     return []
+
+# ── Admin API ──
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request):
+    """Список всех пользователей с статистикой"""
+    require_admin(request)
+    if not db_pool:
+        return []
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch('''
+            SELECT 
+                s.user_id,
+                s.user_name,
+                COUNT(DISTINCT s.id) as chat_count,
+                MAX(s.updated_at) as last_activity,
+                COALESCE(SUM(t.total_tokens), 0) as total_tokens,
+                COALESCE(SUM(t.input_tokens), 0) as input_tokens,
+                COALESCE(SUM(t.output_tokens), 0) as output_tokens,
+                COUNT(DISTINCT CASE WHEN t.has_web_search THEN t.id END) as web_search_count
+            FROM chat_sessions s
+            LEFT JOIN token_usage t ON s.user_id = t.user_id
+            WHERE s.user_id != ''
+            GROUP BY s.user_id, s.user_name
+            ORDER BY last_activity DESC
+        ''')
+        return [
+            {
+                "user_id": r['user_id'],
+                "user_name": r['user_name'] or "Без имени",
+                "chat_count": r['chat_count'],
+                "last_activity": r['last_activity'].isoformat() if r['last_activity'] else None,
+                "total_tokens": r['total_tokens'],
+                "input_tokens": r['input_tokens'],
+                "output_tokens": r['output_tokens'],
+                "web_search_count": r['web_search_count']
+            }
+            for r in rows
+        ]
+
+@app.get("/api/admin/users/{user_id}/chats")
+async def admin_user_chats(user_id: str, request: Request):
+    """Список чатов конкретного пользователя"""
+    require_admin(request)
+    if not db_pool:
+        return []
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch('''
+            SELECT s.id, s.title, s.created_at, s.updated_at,
+                   (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as msg_count
+            FROM chat_sessions s 
+            WHERE s.user_id = $1 
+            ORDER BY s.updated_at DESC LIMIT 100
+        ''', user_id)
+        return [
+            {
+                "id": r['id'],
+                "title": r['title'] or "Новый чат",
+                "created_at": r['created_at'].isoformat(),
+                "updated_at": r['updated_at'].isoformat(),
+                "message_count": r['msg_count']
+            }
+            for r in rows
+        ]
+
+@app.get("/api/admin/chats/{session_id}")
+async def admin_get_chat(session_id: str, request: Request):
+    """Просмотр конкретного чата (для админа)"""
+    require_admin(request)
+    if not db_pool:
+        raise HTTPException(404, "База данных недоступна")
+    
+    async with db_pool.acquire() as conn:
+        # Получаем информацию о сессии
+        session = await conn.fetchrow(
+            'SELECT user_id, user_name, title, created_at FROM chat_sessions WHERE id=$1',
+            session_id
+        )
+        if not session:
+            raise HTTPException(404, "Чат не найден")
+        
+        # Получаем сообщения
+        messages = await conn.fetch(
+            'SELECT role, content, created_at FROM chat_messages WHERE session_id=$1 ORDER BY id',
+            session_id
+        )
+        
+        return {
+            "session_id": session_id,
+            "user_id": session['user_id'],
+            "user_name": session['user_name'],
+            "title": session['title'],
+            "created_at": session['created_at'].isoformat(),
+            "messages": [
+                {
+                    "role": m['role'],
+                    "content": m['content'],
+                    "time": m['created_at'].strftime('%d.%m.%Y %H:%M')
+                }
+                for m in messages
+            ]
+        }
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request, days: int = 30):
+    """Общая статистика за период"""
+    require_admin(request)
+    if not db_pool:
+        return {}
+    
+    async with db_pool.acquire() as conn:
+        # Общая статистика
+        totals = await conn.fetchrow(f'''
+            SELECT 
+                COUNT(*) as total_requests,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(input_tokens), 0) as input_tokens,
+                COALESCE(SUM(output_tokens), 0) as output_tokens,
+                COUNT(CASE WHEN has_web_search THEN 1 END) as web_searches,
+                COUNT(CASE WHEN has_tool_use THEN 1 END) as tool_uses
+            FROM token_usage
+            WHERE created_at > NOW() - INTERVAL '{days} days'
+        ''')
+        
+        # По дням
+        daily = await conn.fetch(f'''
+            SELECT 
+                DATE(created_at) as date,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens
+            FROM token_usage
+            WHERE created_at > NOW() - INTERVAL '{days} days'
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC
+        ''')
+        
+        # Топ пользователей
+        top_users = await conn.fetch(f'''
+            SELECT 
+                user_id,
+                user_name,
+                COUNT(*) as requests,
+                COALESCE(SUM(total_tokens), 0) as tokens
+            FROM token_usage
+            WHERE created_at > NOW() - INTERVAL '{days} days'
+            GROUP BY user_id, user_name
+            ORDER BY tokens DESC
+            LIMIT 10
+        ''')
+        
+        return {
+            "period_days": days,
+            "totals": {
+                "requests": totals['total_requests'],
+                "total_tokens": totals['total_tokens'],
+                "input_tokens": totals['input_tokens'],
+                "output_tokens": totals['output_tokens'],
+                "web_searches": totals['web_searches'],
+                "tool_uses": totals['tool_uses']
+            },
+            "daily": [
+                {"date": r['date'].isoformat(), "requests": r['requests'], "tokens": r['tokens']}
+                for r in daily
+            ],
+            "top_users": [
+                {"user_id": r['user_id'], "user_name": r['user_name'], "requests": r['requests'], "tokens": r['tokens']}
+                for r in top_users
+            ]
+        }
+
+# ── Admin Page ──
+@app.get("/admin")
+async def admin_page(request: Request):
+    """Страница администратора"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not is_admin(user):
+        return HTMLResponse("<h1>Доступ запрещён</h1><p>У вас нет прав администратора.</p>", status_code=403)
+    
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админка — Mos-GSM AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Roboto',sans-serif;background:#F5F3EF;color:#1A1A1A;min-height:100vh}
+.header{background:#1A1A1A;color:#F3C04D;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:20px;font-weight:500}
+.header a{color:#F3C04D;text-decoration:none;font-size:14px}
+.container{max-width:1400px;margin:0 auto;padding:24px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.stat-card h3{font-size:12px;color:#6B6560;text-transform:uppercase;margin-bottom:8px}
+.stat-card .value{font-size:28px;font-weight:700;color:#1A1A1A}
+.stat-card .sub{font-size:12px;color:#9A9590;margin-top:4px}
+.section{background:#fff;border-radius:12px;padding:20px;margin-bottom:24px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.section h2{font-size:16px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #E8E6E3}
+table{width:100%;border-collapse:collapse}
+th,td{padding:12px;text-align:left;border-bottom:1px solid #E8E6E3}
+th{font-size:12px;color:#6B6560;text-transform:uppercase;font-weight:500}
+td{font-size:14px}
+tr:hover{background:#F9F8F6}
+.user-link{color:#C9982E;text-decoration:none;font-weight:500}
+.user-link:hover{text-decoration:underline}
+.chat-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;overflow:auto;padding:40px}
+.chat-modal.active{display:flex;justify-content:center}
+.chat-content{background:#fff;border-radius:16px;max-width:800px;width:100%;max-height:90vh;overflow:auto}
+.chat-header{padding:20px;border-bottom:1px solid #E8E6E3;display:flex;justify-content:space-between;align-items:center}
+.chat-header h3{font-size:16px}
+.close-btn{background:none;border:none;font-size:24px;cursor:pointer;color:#6B6560}
+.chat-messages{padding:20px}
+.message{margin-bottom:16px;padding:12px 16px;border-radius:12px;max-width:85%}
+.message.user{background:#F3C04D;margin-left:auto}
+.message.assistant{background:#F5F3EF}
+.message .role{font-size:11px;color:#6B6560;margin-bottom:4px}
+.message .time{font-size:10px;color:#9A9590;margin-top:6px}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tab{padding:8px 16px;background:#E8E6E3;border:none;border-radius:8px;cursor:pointer;font-size:14px}
+.tab.active{background:#1A1A1A;color:#F3C04D}
+.back-btn{background:#E8E6E3;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:16px}
+#userChats{display:none}
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>📊 Панель администратора</h1>
+    <a href="/">← Вернуться в чат</a>
+</div>
+
+<div class="container">
+    <div id="stats-section">
+        <div class="stats-grid" id="statsGrid"></div>
+        
+        <div class="section">
+            <h2>👥 Сотрудники</h2>
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Чатов</th>
+                        <th>Токенов</th>
+                        <th>Веб-поиск</th>
+                        <th>Последняя активность</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>📈 По дням (последние 30 дней)</h2>
+            <table id="dailyTable">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Запросов</th>
+                        <th>Токенов</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div id="userChats">
+        <button class="back-btn" onclick="showMainStats()">← Назад к списку</button>
+        <div class="section">
+            <h2 id="userChatsTitle">Чаты пользователя</h2>
+            <table id="chatsTable">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Сообщений</th>
+                        <th>Создан</th>
+                        <th>Обновлён</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="chat-modal" id="chatModal">
+    <div class="chat-content">
+        <div class="chat-header">
+            <h3 id="chatTitle">Чат</h3>
+            <button class="close-btn" onclick="closeChat()">×</button>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+    </div>
+</div>
+
+<script>
+async function loadStats() {
+    const resp = await fetch('/api/admin/stats?days=30');
+    const data = await resp.json();
+    
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card">
+            <h3>Запросов</h3>
+            <div class="value">${data.totals.requests.toLocaleString()}</div>
+            <div class="sub">за 30 дней</div>
+        </div>
+        <div class="stat-card">
+            <h3>Токенов</h3>
+            <div class="value">${data.totals.total_tokens.toLocaleString()}</div>
+            <div class="sub">входящих: ${data.totals.input_tokens.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+            <h3>Веб-поиск</h3>
+            <div class="value">${data.totals.web_searches.toLocaleString()}</div>
+            <div class="sub">запросов с поиском</div>
+        </div>
+        <div class="stat-card">
+            <h3>Генерация КП</h3>
+            <div class="value">${data.totals.tool_uses.toLocaleString()}</div>
+            <div class="sub">документов</div>
+        </div>
+    `;
+    
+    // Daily table
+    const dailyTbody = document.querySelector('#dailyTable tbody');
+    dailyTbody.innerHTML = data.daily.slice(0, 14).map(d => `
+        <tr>
+            <td>${new Date(d.date).toLocaleDateString('ru-RU')}</td>
+            <td>${d.requests}</td>
+            <td>${d.tokens.toLocaleString()}</td>
+        </tr>
+    `).join('');
+}
+
+async function loadUsers() {
+    const resp = await fetch('/api/admin/users');
+    const users = await resp.json();
+    
+    const tbody = document.querySelector('#usersTable tbody');
+    tbody.innerHTML = users.map(u => `
+        <tr>
+            <td><a href="#" class="user-link" onclick="showUserChats('${u.user_id}', '${u.user_name}')">${u.user_name}</a></td>
+            <td>${u.chat_count}</td>
+            <td>${u.total_tokens.toLocaleString()}</td>
+            <td>${u.web_search_count}</td>
+            <td>${u.last_activity ? new Date(u.last_activity).toLocaleString('ru-RU') : '—'}</td>
+        </tr>
+    `).join('');
+}
+
+async function showUserChats(userId, userName) {
+    document.getElementById('stats-section').style.display = 'none';
+    document.getElementById('userChats').style.display = 'block';
+    document.getElementById('userChatsTitle').textContent = `Чаты: ${userName}`;
+    
+    const resp = await fetch(`/api/admin/users/${userId}/chats`);
+    const chats = await resp.json();
+    
+    const tbody = document.querySelector('#chatsTable tbody');
+    tbody.innerHTML = chats.map(c => `
+        <tr>
+            <td><a href="#" class="user-link" onclick="openChat('${c.id}')">${c.title}</a></td>
+            <td>${c.message_count}</td>
+            <td>${new Date(c.created_at).toLocaleString('ru-RU')}</td>
+            <td>${new Date(c.updated_at).toLocaleString('ru-RU')}</td>
+        </tr>
+    `).join('');
+}
+
+function showMainStats() {
+    document.getElementById('stats-section').style.display = 'block';
+    document.getElementById('userChats').style.display = 'none';
+}
+
+async function openChat(sessionId) {
+    const resp = await fetch(`/api/admin/chats/${sessionId}`);
+    const chat = await resp.json();
+    
+    document.getElementById('chatTitle').textContent = chat.title || 'Чат';
+    document.getElementById('chatMessages').innerHTML = chat.messages.map(m => `
+        <div class="message ${m.role}">
+            <div class="role">${m.role === 'user' ? '👤 Пользователь' : '🤖 AI'}</div>
+            <div class="text">${m.content.replace(/\\n/g, '<br>')}</div>
+            <div class="time">${m.time}</div>
+        </div>
+    `).join('');
+    
+    document.getElementById('chatModal').classList.add('active');
+}
+
+function closeChat() {
+    document.getElementById('chatModal').classList.remove('active');
+}
+
+document.getElementById('chatModal').addEventListener('click', e => {
+    if (e.target.id === 'chatModal') closeChat();
+});
+
+// Init
+loadStats();
+loadUsers();
+</script>
+</body>
+</html>""")
 
 # ── Frontend ──
 @app.get("/")
