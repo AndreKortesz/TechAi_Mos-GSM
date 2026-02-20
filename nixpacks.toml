@@ -1,2 +1,0 @@
-[phases.setup]
-nixPkgs = ["pango", "fontconfig", "gdk-pixbuf", "cairo", "gobject-introspection", "pkg-config"]
