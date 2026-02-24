@@ -226,53 +226,37 @@ LEGAL_ENTITIES = {
 # ── Tool для генерации КП ──
 KP_TOOL = {
     "name": "generate_kp",
-    "description": """Генерирует коммерческое предложение (КП) в формате PDF.
+    "description": """Генерирует простое коммерческое предложение (КП) в формате PDF.
     
-Используй этот инструмент когда менеджер просит:
-- составить КП / коммерческое предложение
-- сделать смету / расчёт для клиента
-- подготовить предложение на оборудование и работы
+Используй когда менеджер просит составить КП / смету / предложение.
 
-ВАЖНО: Заполняй ВСЕ поля максимально подробно!""",
+Перед вызовом уточни:
+1. От какого юрлица? (ИП Конторин - без НДС, ООО Инфинити Буст - с НДС 22%, ИП Тимофеев - без НДС)
+2. Название клиента
+3. Список оборудования с ценами
+4. Список работ с ценами""",
     "input_schema": {
         "type": "object",
         "properties": {
             "legal_entity_id": {
                 "type": "string",
                 "enum": ["ip_kontorin", "ooo_infinity", "ip_timofeev"],
-                "description": "ID юрлица поставщика: ip_kontorin (ИП Конторин, без НДС), ooo_infinity (ООО Инфинити Буст, с НДС 22%), ip_timofeev (ИП Тимофеев, без НДС)"
+                "description": "ID юрлица: ip_kontorin (без НДС), ooo_infinity (НДС 22%), ip_timofeev (без НДС)"
             },
             "client_name": {
                 "type": "string",
-                "description": "Название клиента (покупателя)"
-            },
-            "client_contact": {
-                "type": "string",
-                "description": "Контакт клиента (телефон, email) - опционально"
-            },
-            "object_address": {
-                "type": "string",
-                "description": "Адрес объекта - опционально"
-            },
-            "project_description": {
-                "type": "string",
-                "description": "Описание проекта: что устанавливаем, для чего, основные задачи"
-            },
-            "features": {
-                "type": "array",
-                "description": "Список функций/возможностей системы (каждый пункт начинается с ✓)",
-                "items": {"type": "string"}
+                "description": "Название клиента/покупателя"
             },
             "materials": {
                 "type": "array",
-                "description": "Список материалов/оборудования",
+                "description": "Список оборудования",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Наименование"},
-                        "quantity": {"type": "number", "description": "Количество"},
-                        "unit": {"type": "string", "description": "Единица измерения (шт, м, компл)"},
-                        "price": {"type": "number", "description": "Цена за единицу"}
+                        "name": {"type": "string"},
+                        "quantity": {"type": "number"},
+                        "unit": {"type": "string"},
+                        "price": {"type": "number"}
                     },
                     "required": ["name", "quantity", "unit", "price"]
                 }
@@ -283,71 +267,13 @@ KP_TOOL = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Наименование работы"},
-                        "quantity": {"type": "number", "description": "Количество"},
-                        "unit": {"type": "string", "description": "Единица измерения"},
-                        "price": {"type": "number", "description": "Цена за единицу"}
+                        "name": {"type": "string"},
+                        "quantity": {"type": "number"},
+                        "unit": {"type": "string"},
+                        "price": {"type": "number"}
                     },
                     "required": ["name", "quantity", "unit", "price"]
                 }
-            },
-            "stages": {
-                "type": "array",
-                "description": "Этапы реализации проекта",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Название этапа"},
-                        "duration": {"type": "string", "description": "Срок (например: 1-2 дня)"},
-                        "description": {"type": "string", "description": "Описание работ на этапе"}
-                    },
-                    "required": ["name", "duration", "description"]
-                }
-            },
-            "options": {
-                "type": "array",
-                "description": "Дополнительные опции (по запросу)",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Название опции"},
-                        "price": {"type": "string", "description": "Цена (например: +12 000 ₽)"}
-                    },
-                    "required": ["name", "price"]
-                }
-            },
-            "warranty": {
-                "type": "object",
-                "description": "Гарантийные условия",
-                "properties": {
-                    "equipment_months": {"type": "integer", "description": "Гарантия на оборудование в месяцах"},
-                    "works_months": {"type": "integer", "description": "Гарантия на работы в месяцах"},
-                    "additional": {"type": "array", "items": {"type": "string"}, "description": "Дополнительные гарантийные условия"}
-                }
-            },
-            "payment_terms": {
-                "type": "string",
-                "description": "Условия оплаты (например: 50% предоплата, 50% по завершении)"
-            },
-            "total_duration": {
-                "type": "string",
-                "description": "Общий срок реализации проекта"
-            },
-            "validity_days": {
-                "type": "integer",
-                "description": "Срок актуальности КП в рабочих днях (по умолчанию 14)"
-            },
-            "manager_name": {
-                "type": "string",
-                "description": "ФИО менеджера проекта"
-            },
-            "manager_phone": {
-                "type": "string",
-                "description": "Телефон менеджера"
-            },
-            "manager_email": {
-                "type": "string",
-                "description": "Email менеджера"
             }
         },
         "required": ["legal_entity_id", "client_name", "materials", "works"]
@@ -753,7 +679,7 @@ async def get_next_kp_number() -> str:
     return str(uuid.uuid4())[:6]
 
 def generate_kp_pdf_file(kp_data: dict, legal_entity: dict, kp_number: str, pdf_path: Path) -> tuple:
-    """Генерирует PDF коммерческого предложения с помощью fpdf2"""
+    """Генерирует простой PDF коммерческого предложения"""
     from fpdf import FPDF
     
     # Расчёт сумм
@@ -769,323 +695,192 @@ def generate_kp_pdf_file(kp_data: dict, legal_entity: dict, kp_number: str, pdf_
     if vat_rate:
         vat_amount = total * vat_rate / (100 + vat_rate)
     
-    # Дата
     today = datetime.now().strftime("%d.%m.%Y")
-    validity_days = kp_data.get("validity_days", 14)
-    
-    # Клиент
     client_name = kp_data.get("client_name", "")
-    client_contact = kp_data.get("client_contact", "")
-    object_address = kp_data.get("object_address", "")
     
-    # Путь к картинкам
+    # Пути
     stamps_dir = Path(__file__).parent / "static" / "stamps"
     fonts_dir = Path(__file__).parent / "static" / "fonts"
     
     # Создаём PDF
     pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
+    pdf.set_left_margin(15)
+    pdf.set_right_margin(15)
     
-    # Добавляем шрифт DejaVu для кириллицы (сначала из проекта, потом из системы)
+    # Шрифт
     font_path = fonts_dir / "DejaVuSans.ttf"
     font_path_bold = fonts_dir / "DejaVuSans-Bold.ttf"
-    
-    # Fallback на системные шрифты
     if not font_path.exists():
         font_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
         font_path_bold = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
     
-    if font_path.exists():
-        pdf.add_font("DejaVu", "", str(font_path))
-        pdf.add_font("DejaVu", "B", str(font_path_bold))
-        font_name = "DejaVu"
-    else:
-        raise Exception("Шрифт DejaVu не найден! Кириллица не будет работать.")
+    if not font_path.exists():
+        raise Exception("Шрифт DejaVu не найден!")
+    
+    pdf.add_font("DejaVu", "", str(font_path))
+    pdf.add_font("DejaVu", "B", str(font_path_bold))
+    font = "DejaVu"
     
     # Цвета
-    yellow = (212, 165, 58)
-    black = (26, 26, 26)
-    gray = (102, 102, 102)
+    YELLOW = (212, 165, 58)
+    BLACK = (30, 30, 30)
+    GRAY = (100, 100, 100)
     
-    # Логотип
+    # === ШАПКА ===
     logo_path = stamps_dir / legal_entity.get("logo", "")
     if logo_path.exists():
-        pdf.image(str(logo_path), x=10, y=10, h=15)
+        pdf.image(str(logo_path), x=15, y=12, h=18)
     
-    # Линия под шапкой
-    pdf.set_draw_color(*yellow)
+    # Контакты компании справа
+    pdf.set_xy(120, 12)
+    pdf.set_font(font, "", 8)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(0, 4, legal_entity["name"], ln=True, align="R")
+    pdf.set_x(120)
+    pdf.cell(0, 4, f"ИНН: {legal_entity['inn']}", ln=True, align="R")
+    pdf.set_x(120)
+    pdf.cell(0, 4, f"Тел: {legal_entity['phone']}", ln=True, align="R")
+    
+    # Линия
+    pdf.set_draw_color(*YELLOW)
+    pdf.set_line_width(0.8)
+    pdf.line(15, 35, 195, 35)
+    
+    # === ЗАГОЛОВОК ===
+    pdf.set_y(42)
+    pdf.set_font(font, "B", 16)
+    pdf.set_text_color(*BLACK)
+    pdf.cell(0, 10, f"КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ", ln=True, align="C")
+    pdf.set_font(font, "", 11)
+    pdf.cell(0, 6, f"№ {kp_number} от {today}", ln=True, align="C")
+    pdf.ln(8)
+    
+    # === СТОРОНЫ ===
+    pdf.set_font(font, "", 10)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(35, 6, "Заказчик:", ln=False)
+    pdf.set_text_color(*BLACK)
+    pdf.set_font(font, "B", 10)
+    pdf.cell(0, 6, client_name if client_name else "---", ln=True)
+    
+    pdf.set_font(font, "", 10)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(35, 6, "Исполнитель:", ln=False)
+    pdf.set_text_color(*BLACK)
+    pdf.set_font(font, "B", 10)
+    pdf.cell(0, 6, legal_entity["name"], ln=True)
+    pdf.ln(6)
+    
+    # === ТАБЛИЦА ОБОРУДОВАНИЯ ===
+    pdf.set_font(font, "B", 11)
+    pdf.set_text_color(*BLACK)
+    pdf.cell(0, 8, "1. ОБОРУДОВАНИЕ И МАТЕРИАЛЫ", ln=True)
+    pdf.ln(2)
+    
+    # Заголовок таблицы
+    col_w = [10, 85, 18, 15, 25, 27]
+    headers = ["№", "Наименование", "Кол-во", "Ед.", "Цена", "Сумма"]
+    
+    pdf.set_font(font, "B", 9)
+    pdf.set_fill_color(245, 245, 245)
+    for w, h in zip(col_w, headers):
+        pdf.cell(w, 7, h, border=1, align="C", fill=True)
+    pdf.ln()
+    
+    # Строки
+    pdf.set_font(font, "", 9)
+    for i, m in enumerate(materials, 1):
+        s = m["quantity"] * m["price"]
+        pdf.cell(col_w[0], 6, str(i), border=1, align="C")
+        pdf.cell(col_w[1], 6, str(m["name"])[:45], border=1)
+        pdf.cell(col_w[2], 6, str(int(m["quantity"])), border=1, align="C")
+        pdf.cell(col_w[3], 6, str(m["unit"]), border=1, align="C")
+        pdf.cell(col_w[4], 6, format_price(m["price"]), border=1, align="R")
+        pdf.cell(col_w[5], 6, format_price(s), border=1, align="R")
+        pdf.ln()
+    
+    pdf.set_font(font, "B", 10)
+    pdf.cell(0, 7, f"Итого оборудование: {format_price(total_materials)} руб.", ln=True, align="R")
+    pdf.ln(4)
+    
+    # === ТАБЛИЦА РАБОТ ===
+    pdf.set_font(font, "B", 11)
+    pdf.cell(0, 8, "2. МОНТАЖНЫЕ РАБОТЫ", ln=True)
+    pdf.ln(2)
+    
+    pdf.set_font(font, "B", 9)
+    pdf.set_fill_color(245, 245, 245)
+    for w, h in zip(col_w, headers):
+        pdf.cell(w, 7, h, border=1, align="C", fill=True)
+    pdf.ln()
+    
+    pdf.set_font(font, "", 9)
+    for i, w in enumerate(works, 1):
+        s = w["quantity"] * w["price"]
+        pdf.cell(col_w[0], 6, str(i), border=1, align="C")
+        pdf.cell(col_w[1], 6, str(w["name"])[:45], border=1)
+        pdf.cell(col_w[2], 6, str(int(w["quantity"])), border=1, align="C")
+        pdf.cell(col_w[3], 6, str(w["unit"]), border=1, align="C")
+        pdf.cell(col_w[4], 6, format_price(w["price"]), border=1, align="R")
+        pdf.cell(col_w[5], 6, format_price(s), border=1, align="R")
+        pdf.ln()
+    
+    pdf.set_font(font, "B", 10)
+    pdf.cell(0, 7, f"Итого работы: {format_price(total_works)} руб.", ln=True, align="R")
+    pdf.ln(6)
+    
+    # === ИТОГО ===
+    pdf.set_draw_color(*YELLOW)
     pdf.set_line_width(0.5)
-    pdf.line(10, 28, 200, 28)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(4)
     
-    # Заголовок
-    pdf.set_y(35)
-    pdf.set_font(font_name, "B", 14)
-    pdf.set_text_color(*black)
-    pdf.cell(0, 8, f"КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ № {kp_number}/2026", ln=True, align="C")
-    pdf.set_font(font_name, "", 10)
-    pdf.cell(0, 6, f"от {today}", ln=True, align="C")
-    pdf.ln(5)
+    pdf.set_font(font, "B", 12)
+    pdf.cell(100, 8, "ИТОГО:", ln=False)
+    pdf.cell(0, 8, f"{format_price(total)} руб.", ln=True, align="R")
     
-    # Информация о сторонах
-    pdf.set_font(font_name, "", 9)
-    
-    pdf.set_x(10)
-    pdf.set_text_color(*gray)
-    pdf.cell(40, 5, "ЗАКАЗЧИК:", ln=False)
-    pdf.set_text_color(*black)
-    pdf.multi_cell(0, 5, client_name if client_name else "—")
-    
-    pdf.set_x(10)
-    pdf.set_text_color(*gray)
-    pdf.cell(40, 5, "ИСПОЛНИТЕЛЬ:", ln=False)
-    pdf.set_text_color(*black)
-    pdf.multi_cell(0, 5, legal_entity['name'])
-    
-    pdf.set_x(10)
-    pdf.set_text_color(*gray)
-    pdf.cell(40, 5, "СРОК КП:", ln=False)
-    pdf.set_text_color(*black)
-    pdf.cell(0, 5, f"{validity_days} календарных дней", ln=True)
-    pdf.ln(5)
-    
-    # 1. ОПИСАНИЕ ПРОЕКТА
-    project_description = kp_data.get("project_description", "")
-    features = kp_data.get("features", [])
-    
-    if project_description or features:
-        pdf.set_fill_color(245, 245, 245)
-        pdf.set_font(font_name, "B", 10)
-        pdf.cell(0, 7, "1. ОПИСАНИЕ ПРОЕКТА", ln=True, fill=True)
-        pdf.ln(2)
-        
-        pdf.set_font(font_name, "", 9)
-        if project_description:
-            pdf.multi_cell(0, 5, project_description)
-            pdf.ln(2)
-        
-        for feature in features:
-            pdf.cell(5, 5, "", ln=False)
-            pdf.multi_cell(0, 5, f"✓ {feature}")
-        pdf.ln(3)
-    
-    # 2. ОБОРУДОВАНИЕ
-    pdf.set_font(font_name, "B", 10)
-    pdf.set_fill_color(245, 245, 245)
-    section_num = 2 if (project_description or features) else 1
-    pdf.cell(0, 7, f"{section_num}. КОМПЛЕКТАЦИЯ ОБОРУДОВАНИЯ", ln=True, fill=True)
-    pdf.ln(2)
-    
-    # Таблица оборудования
-    col_widths = [10, 90, 15, 15, 25, 30]
-    headers = ["№", "Наименование", "Кол.", "Ед.", "Цена", "Сумма"]
-    
-    pdf.set_font(font_name, "B", 8)
-    pdf.set_fill_color(240, 240, 240)
-    for i, (w, h) in enumerate(zip(col_widths, headers)):
-        pdf.cell(w, 6, h, border=1, fill=True, align="C")
-    pdf.ln()
-    
-    pdf.set_font(font_name, "", 8)
-    for idx, m in enumerate(materials, 1):
-        summa = m["quantity"] * m["price"]
-        row = [str(idx), m["name"][:50], str(int(m["quantity"])), m["unit"], format_price(m["price"]), format_price(summa)]
-        aligns = ["C", "L", "C", "C", "R", "R"]
-        for w, val, align in zip(col_widths, row, aligns):
-            pdf.cell(w, 5, val, border=1, align=align)
-        pdf.ln()
-    
-    pdf.set_font(font_name, "B", 9)
-    pdf.cell(0, 6, f"ИТОГО ОБОРУДОВАНИЕ: {format_price(total_materials)} руб", ln=True, align="R")
-    pdf.ln(3)
-    
-    # 3. РАБОТЫ
-    section_num += 1
-    pdf.set_font(font_name, "B", 10)
-    pdf.set_fill_color(245, 245, 245)
-    pdf.cell(0, 7, f"{section_num}. МОНТАЖНЫЕ И ПУСКОНАЛАДОЧНЫЕ РАБОТЫ", ln=True, fill=True)
-    pdf.ln(2)
-    
-    pdf.set_font(font_name, "B", 8)
-    pdf.set_fill_color(240, 240, 240)
-    for i, (w, h) in enumerate(zip(col_widths, headers)):
-        pdf.cell(w, 6, h, border=1, fill=True, align="C")
-    pdf.ln()
-    
-    pdf.set_font(font_name, "", 8)
-    for idx, w in enumerate(works, 1):
-        summa = w["quantity"] * w["price"]
-        row = [str(idx), w["name"][:50], str(int(w["quantity"])), w["unit"], format_price(w["price"]), format_price(summa)]
-        aligns = ["C", "L", "C", "C", "R", "R"]
-        for width, val, align in zip(col_widths, row, aligns):
-            pdf.cell(width, 5, val, border=1, align=align)
-        pdf.ln()
-    
-    pdf.set_font(font_name, "B", 9)
-    pdf.cell(0, 6, f"ИТОГО РАБОТЫ: {format_price(total_works)} руб", ln=True, align="R")
-    pdf.ln(3)
-    
-    # 4. ОБЩАЯ СТОИМОСТЬ
-    section_num += 1
-    pdf.set_font(font_name, "B", 10)
-    pdf.set_fill_color(245, 245, 245)
-    pdf.cell(0, 7, f"{section_num}. ОБЩАЯ СТОИМОСТЬ ПРОЕКТА", ln=True, fill=True)
-    pdf.ln(2)
-    
-    pdf.set_font(font_name, "", 10)
-    pdf.cell(120, 6, "Оборудование и материалы:", ln=False)
-    pdf.cell(0, 6, f"{format_price(total_materials)} руб", ln=True, align="R")
-    pdf.cell(120, 6, "Монтажные работы:", ln=False)
-    pdf.cell(0, 6, f"{format_price(total_works)} руб", ln=True, align="R")
-    
-    pdf.set_draw_color(*black)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(2)
-    
-    pdf.set_font(font_name, "B", 12)
-    pdf.cell(120, 8, "ИТОГО:", ln=False)
-    pdf.cell(0, 8, f"{format_price(total)} руб", ln=True, align="R")
-    
-    pdf.set_font(font_name, "", 9)
+    pdf.set_font(font, "", 10)
     if vat_rate:
-        pdf.cell(0, 5, f"В том числе НДС ({vat_rate}%): {format_price(vat_amount)} руб", ln=True, align="R")
+        pdf.cell(100, 6, f"В т.ч. НДС ({vat_rate}%):", ln=False)
+        pdf.cell(0, 6, f"{format_price(vat_amount)} руб.", ln=True, align="R")
     else:
-        pdf.cell(0, 5, "НДС не облагается", ln=True, align="R")
+        pdf.cell(0, 6, "НДС не облагается", ln=True, align="R")
     
     pdf.ln(2)
-    pdf.set_text_color(*gray)
-    pdf.multi_cell(0, 5, f"Сумма прописью: {num_to_words(total)}")
-    pdf.set_text_color(*black)
-    pdf.ln(3)
+    pdf.set_font(font, "", 9)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(0, 5, f"({num_to_words(total)})", ln=True)
+    pdf.set_text_color(*BLACK)
     
-    # 5. ЭТАПЫ РЕАЛИЗАЦИИ
-    stages = kp_data.get("stages", [])
-    if stages:
-        section_num += 1
-        pdf.set_font(font_name, "B", 10)
-        pdf.set_fill_color(245, 245, 245)
-        pdf.cell(0, 7, f"{section_num}. ЭТАПЫ РЕАЛИЗАЦИИ ПРОЕКТА", ln=True, fill=True)
-        pdf.ln(2)
-        
-        stage_widths = [50, 25, 115]
-        stage_headers = ["Этап", "Срок", "Описание"]
-        
-        pdf.set_font(font_name, "B", 8)
-        pdf.set_fill_color(240, 240, 240)
-        for w, h in zip(stage_widths, stage_headers):
-            pdf.cell(w, 6, h, border=1, fill=True, align="C")
-        pdf.ln()
-        
-        pdf.set_font(font_name, "", 8)
-        for s in stages:
-            pdf.cell(stage_widths[0], 5, s["name"][:25], border=1)
-            pdf.cell(stage_widths[1], 5, s["duration"], border=1, align="C")
-            pdf.cell(stage_widths[2], 5, s["description"][:60], border=1)
-            pdf.ln()
-        
-        total_duration = kp_data.get("total_duration", "")
-        if total_duration:
-            pdf.set_font(font_name, "", 9)
-            pdf.cell(0, 6, f"Общий срок: {total_duration}", ln=True)
-        pdf.ln(3)
+    pdf.ln(4)
+    pdf.set_font(font, "", 9)
+    pdf.cell(0, 5, "Срок действия предложения: 14 календарных дней", ln=True)
     
-    # 6. ГАРАНТИИ
-    warranty = kp_data.get("warranty", {})
-    if warranty:
-        section_num += 1
-        pdf.set_font(font_name, "B", 10)
-        pdf.set_fill_color(245, 245, 245)
-        pdf.cell(0, 7, f"{section_num}. ГАРАНТИИ И СЕРВИС", ln=True, fill=True)
-        pdf.ln(2)
-        
-        pdf.set_font(font_name, "", 9)
-        if warranty.get("equipment_months"):
-            pdf.multi_cell(0, 5, f"✓ Гарантия на оборудование: {warranty['equipment_months']} месяцев")
-        if warranty.get("works_months"):
-            pdf.multi_cell(0, 5, f"✓ Гарантия на монтажные работы: {warranty['works_months']} месяцев")
-        for add in warranty.get("additional", []):
-            pdf.multi_cell(0, 5, f"✓ {add}")
-        pdf.ln(3)
-    
-    # 7. УСЛОВИЯ ОПЛАТЫ
-    payment_terms = kp_data.get("payment_terms", "")
-    if payment_terms:
-        section_num += 1
-        pdf.set_font(font_name, "B", 10)
-        pdf.set_fill_color(245, 245, 245)
-        pdf.cell(0, 7, f"{section_num}. УСЛОВИЯ ОПЛАТЫ", ln=True, fill=True)
-        pdf.ln(2)
-        
-        pdf.set_font(font_name, "", 9)
-        pdf.multi_cell(0, 5, payment_terms)
-        pdf.ln(3)
-    
-    # 8. ДОПОЛНИТЕЛЬНЫЕ ОПЦИИ
-    options = kp_data.get("options", [])
-    if options:
-        section_num += 1
-        pdf.set_font(font_name, "B", 10)
-        pdf.set_fill_color(245, 245, 245)
-        pdf.cell(0, 7, f"{section_num}. ДОПОЛНИТЕЛЬНЫЕ ОПЦИИ (по запросу)", ln=True, fill=True)
-        pdf.ln(2)
-        
-        opt_widths = [140, 50]
-        pdf.set_font(font_name, "B", 8)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.cell(opt_widths[0], 6, "Опция", border=1, fill=True, align="C")
-        pdf.cell(opt_widths[1], 6, "Цена", border=1, fill=True, align="C")
-        pdf.ln()
-        
-        pdf.set_font(font_name, "", 8)
-        for o in options:
-            pdf.cell(opt_widths[0], 5, o["name"][:70], border=1)
-            pdf.cell(opt_widths[1], 5, o["price"], border=1, align="R")
-            pdf.ln()
-        pdf.ln(3)
-    
-    # КОНТАКТЫ
-    pdf.ln(3)
-    pdf.set_font(font_name, "B", 10)
-    pdf.cell(0, 6, "КОНТАКТЫ ДЛЯ СВЯЗИ:", ln=True)
-    pdf.set_font(font_name, "", 9)
-    
-    manager_name = kp_data.get("manager_name", "")
-    manager_phone = kp_data.get("manager_phone", "") or legal_entity.get("phone", "")
-    manager_email = kp_data.get("manager_email", "")
-    
-    if manager_name:
-        pdf.cell(0, 5, f"Менеджер проекта: {manager_name}", ln=True)
-    pdf.cell(0, 5, f"Телефон: {manager_phone}", ln=True)
-    if manager_email:
-        pdf.cell(0, 5, f"Email: {manager_email}", ln=True)
-    
-    # Подпись
-    pdf.ln(10)
+    # === ПОДПИСЬ ===
+    pdf.ln(12)
     y_sign = pdf.get_y()
     
-    pdf.set_font(font_name, "", 10)
-    pdf.cell(40, 6, legal_entity["signer_title"], ln=False)
-    pdf.cell(80, 6, "", ln=False)
-    pdf.cell(0, 6, f"_________________ / {legal_entity['signer']} /", ln=True)
+    pdf.set_font(font, "", 10)
+    pdf.cell(50, 6, legal_entity["signer_title"])
+    pdf.cell(60, 6, "")
+    pdf.cell(0, 6, f"_______________ / {legal_entity['signer']} /", ln=True)
     
     # Печать и подпись
     stamp_path = stamps_dir / legal_entity.get("stamp", "")
     sign_path = stamps_dir / legal_entity.get("sign", "")
     
-    if stamp_path.exists():
-        try:
-            pdf.image(str(stamp_path), x=60, y=y_sign - 5, h=25)
-        except:
-            pass
-    if sign_path.exists():
-        try:
-            pdf.image(str(sign_path), x=100, y=y_sign - 3, h=18)
-        except:
-            pass
+    try:
+        if stamp_path.exists():
+            pdf.image(str(stamp_path), x=55, y=y_sign - 8, h=28)
+        if sign_path.exists():
+            pdf.image(str(sign_path), x=95, y=y_sign - 5, h=20)
+    except:
+        pass
     
-    # Сохраняем PDF
+    # Сохраняем
     pdf.output(str(pdf_path))
-    
     return total_materials, total_works, total
 
 async def generate_kp_pdf(kp_data: dict, user: dict) -> dict:
