@@ -17,7 +17,6 @@
 }
 body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
 
-/* Layout */
 .app{display:grid;grid-template-columns:280px 1fr;height:100vh}
 
 /* Sidebar */
@@ -43,11 +42,11 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .sidebar-footer{padding-top:12px;border-top:1px solid #E5E2DC;margin-top:12px;font-size:12px;color:#9A9590;text-align:center;line-height:1.5}
 .sidebar-footer a{color:#C9982E;text-decoration:none}
 
-/* Main chat */
+/* Main */
 .main{display:flex;flex-direction:column;height:100vh;position:relative}
 .main::before{content:'';position:absolute;top:-200px;right:-200px;width:500px;height:500px;background:radial-gradient(circle,rgba(243,192,77,.06),transparent 70%);pointer-events:none}
 
-/* Chat header */
+/* Header */
 .chat-header{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.85);backdrop-filter:blur(12px);z-index:2}
 .header-avatar{width:34px;height:34px;border-radius:10px;background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:1.5px;padding-bottom:5px}
 .header-avatar i{display:block;width:3px;border-radius:1px;background:#1A1A1A}
@@ -60,36 +59,41 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .header-info p::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
 .header-model{margin-left:auto;padding:5px 12px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);font-size:11px;font-weight:500;color:var(--text2);font-family:'JetBrains Mono',monospace}
 
-/* Messages area */
+/* Messages */
 .messages{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
 .messages::-webkit-scrollbar{width:5px}
 .messages::-webkit-scrollbar-thumb{background:var(--text3);border-radius:3px}
 
-/* Welcome screen */
-.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:40px;gap:16px}
-.welcome-icon{width:72px;height:72px;border-radius:20px;background:var(--accent);display:flex;align-items:flex-end;justify-content:center;gap:3px;padding-bottom:12px;animation:iconFloat 3s ease-in-out infinite}
-@keyframes iconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-.welcome-icon i{display:block;width:8px;border-radius:3px;background:#1A1A1A}
-.welcome-icon i:nth-child(1){height:8px}
-.welcome-icon i:nth-child(2){height:16px}
-.welcome-icon i:nth-child(3){height:26px}
-.welcome-icon i:nth-child(4){height:36px}
-.welcome-greeting{font-size:22px;font-weight:700;color:var(--text);font-family:'Roboto',sans-serif}
-.welcome h1{font-family:'Bebas Neue',sans-serif;font-size:28px;font-weight:400;letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin-top:-4px}
-.welcome p{color:var(--text2);font-size:14px;max-width:460px;line-height:1.6}
-.suggestions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;max-width:650px}
-.suggestion{padding:9px 16px;border-radius:20px;border:1px solid var(--border2);background:var(--bg);color:var(--text2);font-size:13px;font-family:inherit;cursor:pointer;transition:.25s;white-space:nowrap;opacity:0;animation:suggestIn .4s ease forwards}
-.suggestion:nth-child(1){animation-delay:.1s}
-.suggestion:nth-child(2){animation-delay:.18s}
-.suggestion:nth-child(3){animation-delay:.26s}
-.suggestion:nth-child(4){animation-delay:.34s}
-.suggestion:nth-child(5){animation-delay:.42s}
-.suggestion:nth-child(6){animation-delay:.5s}
-@keyframes suggestIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-.suggestion:hover{border-color:var(--accent);color:#8B6914;background:rgba(212,165,58,.06);transform:translateY(-1px)}
-.suggestion .sg-icon{margin-right:4px}
+/* ═══ ФОРМА КП ═══ */
+.kp-form-container{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:30px;gap:20px}
+.kp-form{background:#FAFAFA;border:1px solid var(--border2);border-radius:16px;padding:28px 32px;width:100%;max-width:520px;box-shadow:0 4px 24px rgba(0,0,0,.04)}
+.kp-form-title{font-size:18px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:var(--text)}
+.kp-form-title svg{width:24px;height:24px;color:var(--accent)}
+.kp-field{margin-bottom:18px}
+.kp-label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.kp-radio-group{display:flex;gap:8px;flex-wrap:wrap}
+.kp-radio{display:none}
+.kp-radio-label{padding:10px 16px;border-radius:8px;border:1px solid var(--border2);background:var(--bg);color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;transition:.2s;user-select:none}
+.kp-radio-label:hover{border-color:var(--accent);color:var(--accent2)}
+.kp-radio:checked + .kp-radio-label{background:var(--accent);color:#1A1A1A;border-color:var(--accent);font-weight:600}
+.kp-radio-label small{display:block;font-size:10px;font-weight:400;opacity:.7;margin-top:2px}
+.kp-input{width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--border2);font-family:inherit;font-size:14px;color:var(--text);background:var(--bg);transition:.2s;resize:none}
+.kp-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(212,165,58,.1)}
+.kp-input::placeholder{color:var(--text3)}
+textarea.kp-input{min-height:80px}
+.kp-checkbox-wrap{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.kp-checkbox{width:20px;height:20px;accent-color:var(--accent);cursor:pointer}
+.kp-checkbox-text{font-size:14px;color:var(--text2);cursor:pointer}
+.kp-submit{width:100%;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,#D4A53A 0%,#B8912E 100%);color:#1A1A1A;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.kp-submit:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(212,165,58,.3)}
+.kp-submit:active{transform:translateY(0)}
+.kp-submit:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.kp-submit svg{width:18px;height:18px}
+.kp-divider{display:flex;align-items:center;gap:16px;width:100%;max-width:520px;color:var(--text3);font-size:13px}
+.kp-divider::before,.kp-divider::after{content:'';flex:1;height:1px;background:var(--border2)}
+.kp-hint{font-size:12px;color:var(--text3);text-align:center;max-width:400px;line-height:1.5}
 
-/* Message bubbles */
+/* Messages */
 .msg{display:flex;gap:12px;max-width:85%;animation:fadeIn .3s ease}
 .msg.user{align-self:flex-end;flex-direction:row-reverse}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -105,8 +109,6 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .msg-text{padding:14px 18px;border-radius:16px;font-size:14px;line-height:1.7}
 .msg.ai .msg-text{background:var(--bg2);border:1px solid var(--border);border-top-left-radius:4px}
 .msg.user .msg-text{background:rgba(212,165,58,.06);border:1px solid rgba(212,165,58,.18);border-top-right-radius:4px}
-
-/* Markdown rendering */
 .msg-text h1,.msg-text h2,.msg-text h3{margin:16px 0 8px;font-weight:700}
 .msg-text h2{font-size:16px}
 .msg-text h3{font-size:14px;color:#8B6914}
@@ -122,34 +124,22 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .msg-text table{border-collapse:collapse;margin:10px 0;width:100%}
 .msg-text th,.msg-text td{padding:8px 12px;border:1px solid var(--border);font-size:13px;text-align:left}
 .msg-text th{background:var(--bg3);font-weight:600}
-.msg-text blockquote{border-left:3px solid var(--accent);padding:8px 16px;margin:10px 0;background:var(--accent-dim);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
-
 .msg-time{font-size:11px;color:var(--text3);padding:0 4px}
 .msg.user .msg-time{text-align:right}
-
-/* Sources */
 .msg-sources{display:flex;flex-wrap:wrap;gap:6px;padding:0 4px}
 .source-chip{font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(212,165,58,.08);color:#8B6914;border:1px solid rgba(212,165,58,.2);font-family:'JetBrains Mono',monospace;text-decoration:none;transition:.2s}
 .source-chip:hover{background:rgba(212,165,58,.16)}
 
-/* Status indicator — universal */
+/* Status */
 .status-indicator{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;max-width:380px;animation:fadeIn .3s ease}
 .status-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px}
 .status-text{display:flex;flex-direction:column;gap:2px}
 .status-text span{font-size:11px;font-weight:400;opacity:.7}
-
-/* Searching the web */
 .status-indicator.searching{background:rgba(212,165,58,.06);border:1px solid rgba(212,165,58,.15);color:#8B6914}
 .status-indicator.searching .status-icon{background:rgba(212,165,58,.12)}
-.status-indicator.searching .status-icon svg{animation:globePulse 2s ease-in-out infinite}
-@keyframes globePulse{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.1);opacity:1}}
-
-/* Search progress bar */
 .search-progress{height:2px;background:rgba(212,165,58,.15);border-radius:1px;margin-top:8px;overflow:hidden;width:100%}
 .search-progress-bar{height:100%;background:var(--accent);border-radius:1px;animation:searchSweep 2.5s ease-in-out infinite}
 @keyframes searchSweep{0%{width:0;margin-left:0}50%{width:70%;margin-left:15%}100%{width:0;margin-left:100%}}
-
-/* Thinking / generating */
 .status-indicator.thinking{background:rgba(0,0,0,.03);border:1px solid var(--border);color:var(--text2)}
 .status-indicator.thinking .status-icon{background:var(--bg3)}
 .thinking-dots{display:flex;gap:3px;align-items:center;height:16px}
@@ -159,66 +149,96 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .thinking-dots i:nth-child(4){animation-delay:.45s}
 @keyframes thinkWave{0%,100%{transform:translateY(0);opacity:.3}50%{transform:translateY(-6px);opacity:1}}
 
-/* Input area */
-.input-area{padding:16px 24px 20px;border-top:1px solid var(--border);background:rgba(255,255,255,.7);backdrop-filter:blur(12px)}
-.input-wrap{display:flex;align-items:flex-end;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:6px;transition:.2s}
-.input-wrap:focus-within{border-color:rgba(212,165,58,.4);box-shadow:0 0 0 3px rgba(212,165,58,.1)}
-.input-wrap textarea{flex:1;background:transparent;border:none;color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;resize:none;outline:none;max-height:150px;line-height:1.5}
+/* Input */
+.input-area{padding:16px 24px 20px;background:linear-gradient(to top,rgba(255,255,255,1) 80%,rgba(255,255,255,0));position:relative}
+.input-wrap{display:flex;gap:10px;align-items:flex-end;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 6px 6px 16px;transition:.2s;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.input-wrap:focus-within{border-color:var(--accent);box-shadow:0 2px 20px rgba(212,165,58,.1)}
+.input-wrap textarea{flex:1;border:none;outline:none;font-family:inherit;font-size:14px;line-height:1.5;resize:none;min-height:24px;max-height:150px;padding:8px 0;color:var(--text);background:transparent}
 .input-wrap textarea::placeholder{color:var(--text3)}
-.send-btn{width:42px;height:42px;border-radius:12px;border:none;background:#1A1A1A;color:#F3C04D;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
-.send-btn:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(26,26,26,.2)}
-.send-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.send-btn{width:40px;height:40px;border-radius:var(--radius-sm);border:none;background:var(--accent);color:#1A1A1A;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+.send-btn:hover{background:var(--accent2);transform:scale(1.04)}
+.send-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .send-btn svg{width:18px;height:18px}
-.input-hint{display:flex;justify-content:space-between;margin-top:8px;padding:0 8px;font-size:11px;color:var(--text3)}
-.input-hint kbd{background:var(--bg2);padding:1px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px;border:1px solid var(--border)}
+.input-hint{text-align:center;font-size:11px;color:var(--text3);margin-top:8px}
 
-/* Mobile */
 @media(max-width:768px){
   .app{grid-template-columns:1fr}
   .sidebar{display:none}
+  .kp-form{padding:20px}
+  .kp-radio-group{flex-direction:column}
 }
 </style>
 </head>
 <body>
 
 <div class="app">
-  <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="logo-mark"><i></i><i></i><i></i><i></i></div>
       <div class="logo-text">Mos-<span>GSM</span></div>
     </div>
-    <button class="new-chat-btn" onclick="newChat()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Новый чат
-    </button>
+    <button class="new-chat-btn" onclick="newChat()">+ Новый чат</button>
     <div class="chat-list" id="chatList"></div>
     <div class="sidebar-footer">
-      <div id="userInfo" style="margin-bottom:6px;font-weight:500;color:#1A1A1A"></div>
-      <a href="/auth/logout" style="color:#C9982E;text-decoration:none;font-size:11px">Выйти</a>
-      <br>
-      <span style="margin-top:4px;display:inline-block">TechBase AI v1.0 · <a href="https://mos-gsm.ru" target="_blank">mos-gsm.ru</a></span>
+      <span id="userInfo"></span><br>
+      <a href="/logout">Выйти</a><br>
+      TechBase AI v1.0 · <a href="https://mos-gsm.ru" target="_blank">mos-gsm.ru</a>
     </div>
   </aside>
 
-  <!-- Main -->
   <main class="main">
-    <div class="chat-header">
+    <header class="chat-header">
       <div class="header-avatar"><i></i><i></i><i></i><i></i></div>
       <div class="header-info">
         <h2>Mos-GSM AI</h2>
         <p>Онлайн — СКУД & СВН эксперт</p>
       </div>
-      <div class="header-model">claude-sonnet-4.5</div>
-    </div>
+      <div class="header-model">cLaude-sonnet-4.5</div>
+    </header>
 
     <div class="messages" id="messages">
-      <div class="welcome" id="welcome">
-        <div class="welcome-icon"><i></i><i></i><i></i><i></i></div>
-        <div class="welcome-greeting" id="welcomeGreeting"></div>
-        <h1>Mos-GSM AI Ассистент</h1>
-        <p>Знаю всё о СКУД и СВН — от подключения контроллеров до расчёта архива. Задайте вопрос или выберите тему:</p>
-        <div class="suggestions" id="suggestions"></div>
+      <div class="kp-form-container" id="kpFormContainer">
+        <form class="kp-form" id="kpForm" onsubmit="submitKP(event)">
+          <div class="kp-form-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Быстрое КП
+          </div>
+
+          <div class="kp-field">
+            <label class="kp-label">Юрлицо</label>
+            <div class="kp-radio-group">
+              <input type="radio" name="legal" value="ip_kontorin" id="le1" class="kp-radio" checked>
+              <label for="le1" class="kp-radio-label">ИП Конторин<small>без НДС</small></label>
+              <input type="radio" name="legal" value="ooo_infinity" id="le2" class="kp-radio">
+              <label for="le2" class="kp-radio-label">ООО Инфинити<small>НДС 22%</small></label>
+              <input type="radio" name="legal" value="ip_timofeev" id="le3" class="kp-radio">
+              <label for="le3" class="kp-radio-label">ИП Тимофеев<small>без НДС</small></label>
+            </div>
+          </div>
+
+          <div class="kp-field">
+            <label class="kp-label">Клиент</label>
+            <input type="text" class="kp-input" id="kpClient" placeholder="Название компании или ФИО" required>
+          </div>
+
+          <div class="kp-field">
+            <label class="kp-label">Что нужно</label>
+            <textarea class="kp-input" id="kpNeeds" placeholder="Например: 4 камеры 2Мп, регистратор с PoE, диск 1ТБ" required></textarea>
+          </div>
+
+          <div class="kp-checkbox-wrap">
+            <input type="checkbox" class="kp-checkbox" id="kpMontage" checked>
+            <label for="kpMontage" class="kp-checkbox-text">Включить монтажные работы</label>
+          </div>
+
+          <button type="submit" class="kp-submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Сформировать КП
+          </button>
+        </form>
+
+        <div class="kp-divider">или задайте вопрос в чате</div>
+        <p class="kp-hint">Для сложных проектов и консультаций используйте чат ниже</p>
       </div>
     </div>
 
@@ -226,525 +246,155 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
       <div class="input-wrap">
         <textarea id="input" placeholder="Задайте вопрос по СКУД или СВН оборудованию..." rows="1" onkeydown="handleKey(event)"></textarea>
         <button class="send-btn" id="sendBtn" onclick="send()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
-      <div class="input-hint">
-        <span>Mos-GSM AI · Claude + веб-поиск</span>
-        <span><kbd>Enter</kbd> отправить · <kbd>Shift+Enter</kbd> новая строка</span>
-      </div>
+      <div class="input-hint">Mos-GSM AI · Claude + веб-поиск &nbsp;|&nbsp; Enter · отправить &nbsp;|&nbsp; Shift+Enter · новая строка</div>
     </div>
   </main>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-// ── State ──
-let sessionId = null;
-let isGenerating = false;
-let chatHistory = [];
-const chatStore = {}; // {sessionId: [{type:'user'|'ai', text, sources}]}
-
 const messagesEl = document.getElementById('messages');
 const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
-const welcomeEl = document.getElementById('welcome');
 const chatListEl = document.getElementById('chatList');
+const kpFormContainer = document.getElementById('kpFormContainer');
 
-// ── Question Bank (~200 questions by category) ──
-const questionBank = [
-  // 📹 Видеонаблюдение — камеры (30)
-  {icon:'📹', text:'Как сбросить пароль на камере Hikvision?'},
-  {icon:'📹', text:'Настройка ONVIF на Dahua IPC-HDW'},
-  {icon:'📹', text:'Как подключить камеру по PoE?'},
-  {icon:'📹', text:'Разница между H.264 и H.265+ на практике'},
-  {icon:'📹', text:'Как настроить детекцию движения на Hikvision?'},
-  {icon:'📹', text:'Что лучше: купольная или цилиндрическая камера?'},
-  {icon:'📹', text:'Как включить ИК-подсветку на Dahua?'},
-  {icon:'📹', text:'Настройка коридорного режима 9:16 на камерах'},
-  {icon:'📹', text:'Как обновить прошивку камеры Hikvision?'},
-  {icon:'📹', text:'Подключение PTZ-камеры по RS-485'},
-  {icon:'📹', text:'Как настроить WDR на камере для контрового света?'},
-  {icon:'📹', text:'Чем отличается камера 2Мп от 4Мп на практике?'},
-  {icon:'📹', text:'Как подключить аналоговую камеру к IP-регистратору?'},
-  {icon:'📹', text:'Настройка зон приватности (маскирования) на камере'},
-  {icon:'📹', text:'Камера Hikvision не видна в SADP — что делать?'},
-  {icon:'📹', text:'Как настроить камеру Dahua через веб-интерфейс?'},
-  {icon:'📹', text:'Разница между камерами серий DS-2CD21 и DS-2CD23'},
-  {icon:'📹', text:'Почему камера показывает розовое/фиолетовое изображение?'},
-  {icon:'📹', text:'Как подключить микрофон к IP-камере?'},
-  {icon:'📹', text:'Настройка двойного потока (mainstream/substream)'},
-  {icon:'📹', text:'Как выбрать объектив для камеры: 2.8 vs 3.6 vs 6 мм?'},
-  {icon:'📹', text:'Почему камера теряет связь по ночам?'},
-  {icon:'📹', text:'Как включить Smart-аналитику на Hikvision?'},
-  {icon:'📹', text:'Настройка OSD (текст на экране) на камере Dahua'},
-  {icon:'📹', text:'Как переключить камеру с DHCP на статический IP?'},
-  {icon:'📹', text:'Что такое Starlight/DarkFighter в камерах?'},
-  {icon:'📹', text:'Как подключить камеру Uniview к NVR Hikvision?'},
-  {icon:'📹', text:'Почему запотевает объектив уличной камеры?'},
-  {icon:'📹', text:'Настройка тревожного входа/выхода на камере'},
-  {icon:'📹', text:'Как проверить битрейт камеры в реальном времени?'},
+let sessionId = null;
+let isGenerating = false;
+let chatStore = {};
+let userInitials = 'U';
 
-  // 💾 Регистраторы, архив, хранение (25)
-  {icon:'💾', text:'Расчёт архива на 32 камеры 2Мп на 30 дней'},
-  {icon:'💾', text:'Какой HDD выбрать: WD Purple или Seagate SkyHawk?'},
-  {icon:'💾', text:'Сколько камер тянет NVR Hikvision DS-7616NI?'},
-  {icon:'💾', text:'Как настроить RAID на видеосервере?'},
-  {icon:'💾', text:'Расчёт архива на 16 камер 5Мп H.265 на 60 дней'},
-  {icon:'💾', text:'Как восстановить запись с повреждённого HDD?'},
-  {icon:'💾', text:'Настройка удалённого доступа к NVR через P2P'},
-  {icon:'💾', text:'Чем отличается NVR от видеосервера?'},
-  {icon:'💾', text:'Как настроить запись по детекции вместо постоянной?'},
-  {icon:'💾', text:'Максимальное количество HDD в NVR DS-7732NI-K4?'},
-  {icon:'💾', text:'Как перенести архив со старого NVR на новый?'},
-  {icon:'💾', text:'Настройка записи по расписанию на регистраторе'},
-  {icon:'💾', text:'Почему NVR не видит жёсткий диск?'},
-  {icon:'💾', text:'Как подключить NVR к монитору и ТВ одновременно?'},
-  {icon:'💾', text:'Расчёт архива для АЗС: 8 камер 2Мп на 90 дней'},
-  {icon:'💾', text:'Можно ли использовать SSD вместо HDD в NVR?'},
-  {icon:'💾', text:'Как настроить резервное копирование на NAS?'},
-  {icon:'💾', text:'Что делать если NVR перезаписал важную запись?'},
-  {icon:'💾', text:'Как добавить камеру на NVR если каналы заняты?'},
-  {icon:'💾', text:'Расчёт хранилища для банка: 64 камеры на 180 дней'},
-  {icon:'💾', text:'Совместимость HDD разных объёмов в одном NVR'},
-  {icon:'💾', text:'Почему NVR тормозит при воспроизведении архива?'},
-  {icon:'💾', text:'Настройка ANR (автоматическая буферизация) на камерах'},
-  {icon:'💾', text:'Как подключить внешний USB-диск к регистратору?'},
-  {icon:'💾', text:'Какой NVR выбрать для 48 камер?'},
+marked.setOptions({breaks:true,gfm:true});
+function renderMd(text){return marked.parse(text||'')}
 
-  // 🔐 СКУД — контроллеры, считыватели, замки (35)
-  {icon:'🔐', text:'Схема подключения Болид С2000-2'},
-  {icon:'🔐', text:'Совместимость считывателей PERCo с Wiegand'},
-  {icon:'🔐', text:'Как подключить турникет PERCo к контроллеру?'},
-  {icon:'🔐', text:'Настройка Sigur: интеграция с 1С'},
-  {icon:'🔐', text:'Подключение электрозамка к С2000-2'},
-  {icon:'🔐', text:'Разница между Wiegand-26 и Wiegand-34'},
-  {icon:'🔐', text:'Как настроить антипассбэк в СКУД Болид?'},
-  {icon:'🔐', text:'Подключение считывателя Em-Marine к контроллеру'},
-  {icon:'🔐', text:'Настройка расписания доступа в PERCo-Web'},
-  {icon:'🔐', text:'Как добавить карты в контроллер Sigur?'},
-  {icon:'🔐', text:'Схема подключения PERCo CL15 с замком'},
-  {icon:'🔐', text:'Настройка двери с двумя считывателями (вход/выход)'},
-  {icon:'🔐', text:'Как подключить кнопку выхода к контроллеру СКУД?'},
-  {icon:'🔐', text:'Разница между электрозамком и электрозащёлкой'},
-  {icon:'🔐', text:'Схема подключения Болид С2000-4 на 4 двери'},
-  {icon:'🔐', text:'Как настроить гостевой доступ в СКУД?'},
-  {icon:'🔐', text:'Подключение домофона к системе СКУД'},
-  {icon:'🔐', text:'Как настроить СКУД для пожарной разблокировки?'},
-  {icon:'🔐', text:'Схема подключения турникета Ростов-Дон к Болиду'},
-  {icon:'🔐', text:'Как добавить биометрический считыватель в СКУД?'},
-  {icon:'🔐', text:'Настройка шлюза на въезде через СКУД'},
-  {icon:'🔐', text:'Как считать количество людей через турникет?'},
-  {icon:'🔐', text:'Подключение СКУД к ОПС (охранно-пожарная сигнализация)'},
-  {icon:'🔐', text:'Как заменить контроллер СКУД без потери базы карт?'},
-  {icon:'🔐', text:'Настройка доступа по QR-коду через PERCo'},
-  {icon:'🔐', text:'Чем отличается Mifare от Em-Marine?'},
-  {icon:'🔐', text:'Как настроить лифтовой контроль доступа?'},
-  {icon:'🔐', text:'Схема подключения доводчика двери к СКУД'},
-  {icon:'🔐', text:'Как перевести СКУД PERCo с локального на сетевой режим?'},
-  {icon:'🔐', text:'Настройка фотоверификации при проходе через СКУД'},
-  {icon:'🔐', text:'Как подключить сирену к контроллеру СКУД?'},
-  {icon:'🔐', text:'Разница между С2000-2 и RusGuard ACS-102'},
-  {icon:'🔐', text:'Как настроить двойную идентификацию (карта + PIN)?'},
-  {icon:'🔐', text:'Подключение электромагнитного замка ML-180'},
-  {icon:'🔐', text:'Как сделать аварийную разблокировку всех дверей?'},
-
-  // 🌐 Сеть, коммутация, связь (25)
-  {icon:'🌐', text:'Как рассчитать бюджет PoE для 24 камер?'},
-  {icon:'🌐', text:'Настройка VLAN для видеонаблюдения'},
-  {icon:'🌐', text:'Какой коммутатор выбрать для 16 IP-камер?'},
-  {icon:'🌐', text:'Максимальная длина кабеля UTP для PoE-камеры?'},
-  {icon:'🌐', text:'Как настроить Multicast для большого числа камер?'},
-  {icon:'🌐', text:'Проброс портов для удалённого доступа к NVR'},
-  {icon:'🌐', text:'Как проверить PoE на порту коммутатора?'},
-  {icon:'🌐', text:'Разница между PoE (af) и PoE+ (at) и PoE++ (bt)'},
-  {icon:'🌐', text:'Как настроить VPN для доступа к системе из дома?'},
-  {icon:'🌐', text:'Расчёт пропускной способности сети для 32 камер'},
-  {icon:'🌐', text:'Как подключить камеру через интернет без статического IP?'},
-  {icon:'🌐', text:'Настройка DDNS для удалённого доступа к камерам'},
-  {icon:'🌐', text:'Как соединить два здания по оптоволокну для камер?'},
-  {icon:'🌐', text:'Чем отличается управляемый коммутатор от неуправляемого?'},
-  {icon:'🌐', text:'Как подключить Wi-Fi камеру к NVR?'},
-  {icon:'🌐', text:'Настройка QoS для приоритизации видеотрафика'},
-  {icon:'🌐', text:'Как передать видео на расстояние 500м по медному кабелю?'},
-  {icon:'🌐', text:'Расчёт количества портов коммутатора для объекта'},
-  {icon:'🌐', text:'Как настроить SFP-модуль для оптики в коммутаторе?'},
-  {icon:'🌐', text:'Почему камеры зависают при одновременном просмотре?'},
-  {icon:'🌐', text:'Как настроить Port Isolation на коммутаторе?'},
-  {icon:'🌐', text:'Применение PoE-инжектора vs PoE-коммутатора'},
-  {icon:'🌐', text:'Как усилить Wi-Fi сигнал на большом складе?'},
-  {icon:'🌐', text:'Настройка mesh-сети для покрытия территории'},
-  {icon:'🌐', text:'Как организовать видеонаблюдение через 4G/LTE?'},
-
-  // 🔌 Монтаж, кабели, питание (25)
-  {icon:'🔌', text:'Как обжать RJ-45 по стандарту T-568B?'},
-  {icon:'🔌', text:'Расчёт сечения кабеля для питания 12V на 100 метров'},
-  {icon:'🔌', text:'Как правильно заземлить стойку с оборудованием?'},
-  {icon:'🔌', text:'Какой кабель использовать для RS-485 на 500 метров?'},
-  {icon:'🔌', text:'Установка грозозащиты на уличные камеры'},
-  {icon:'🔌', text:'Как подключить ИБП к системе видеонаблюдения?'},
-  {icon:'🔌', text:'Расчёт мощности ИБП для 16 камер и NVR'},
-  {icon:'🔌', text:'Чем отличается CCA от медного кабеля на практике?'},
-  {icon:'🔌', text:'Как проложить кабель в гофре по фасаду здания?'},
-  {icon:'🔌', text:'Настройка распределительной коробки для уличного монтажа'},
-  {icon:'🔌', text:'Какой кабель выбрать для прокладки в земле?'},
-  {icon:'🔌', text:'Как подключить камеру 12V если источник питания далеко?'},
-  {icon:'🔌', text:'Правила прокладки слаботочных кабелей рядом с силовыми'},
-  {icon:'🔌', text:'Как установить камеру на столб без электричества?'},
-  {icon:'🔌', text:'Расчёт автоматов и сечения кабеля для серверной'},
-  {icon:'🔌', text:'Как подключить камеру через PoE-экстендер на 200м?'},
-  {icon:'🔌', text:'Монтаж кабельных лотков: правила и нормы'},
-  {icon:'🔌', text:'Как правильно установить монтажную коробку на стену?'},
-  {icon:'🔌', text:'Выбор между 12V и 24V питанием для камер'},
-  {icon:'🔌', text:'Как защитить оборудование от скачков напряжения?'},
-  {icon:'🔌', text:'Прокладка оптоволокна между зданиями: что нужно?'},
-  {icon:'🔌', text:'Как установить кронштейн для камеры на утеплённый фасад?'},
-  {icon:'🔌', text:'Расчёт времени автономной работы от ИБП'},
-  {icon:'🔌', text:'Как подключить солнечную панель для питания камеры?'},
-  {icon:'🔌', text:'Правила маркировки кабелей при монтаже СВН'},
-
-  // 🖥 ПО, настройка, интеграция (30)
-  {icon:'🖥', text:'Как добавить камеру Dahua в Trassir?'},
-  {icon:'🖥', text:'Настройка RTSP-потока с камеры Hikvision'},
-  {icon:'🖥', text:'Интеграция СКУД Болид с видеонаблюдением'},
-  {icon:'🖥', text:'Как настроить отправку тревог на email?'},
-  {icon:'🖥', text:'Настройка SADP Tool для поиска камер Hikvision'},
-  {icon:'🖥', text:'Как экспортировать видео с NVR на флешку?'},
-  {icon:'🖥', text:'Подключение камер по ONVIF к стороннему ПО'},
-  {icon:'🖥', text:'Настройка Hik-Connect для доступа с телефона'},
-  {icon:'🖥', text:'Как добавить камеру Axis в Macroscop?'},
-  {icon:'🖥', text:'Настройка UProg для программирования приборов Болид'},
-  {icon:'🖥', text:'Как создать пользователя с ограниченным доступом на NVR?'},
-  {icon:'🖥', text:'Интеграция Trassir с СКУД PERCo'},
-  {icon:'🖥', text:'Как настроить push-уведомления при тревоге?'},
-  {icon:'🖥', text:'Подключение камер к ПО Линия (Devline)'},
-  {icon:'🖥', text:'Как просмотреть камеру через VLC плеер?'},
-  {icon:'🖥', text:'Настройка ConfigTool для поиска устройств Dahua'},
-  {icon:'🖥', text:'Как настроить автозапуск ПО видеонаблюдения?'},
-  {icon:'🖥', text:'Интеграция камер с 1С:Предприятие'},
-  {icon:'🖥', text:'Как передать видео на экран охраны в реальном времени?'},
-  {icon:'🖥', text:'Настройка двухфакторной авторизации на NVR'},
-  {icon:'🖥', text:'Как настроить детекцию лиц на камере Hikvision?'},
-  {icon:'🖥', text:'Подключение системы видеонаблюдения к Telegram-боту'},
-  {icon:'🖥', text:'Как мигрировать с аналоговой системы на IP?'},
-  {icon:'🖥', text:'Настройка iVMS-4200 для управления камерами'},
-  {icon:'🖥', text:'Как настроить видеостену для диспетчерской?'},
-  {icon:'🖥', text:'Интеграция видеонаблюдения с охранной сигнализацией'},
-  {icon:'🖥', text:'Как настроить СКУД PERCo-Web с нуля?'},
-  {icon:'🖥', text:'Экспорт отчётов о проходах из СКУД Sigur'},
-  {icon:'🖥', text:'Как подключить камеры к SmartPSS Dahua?'},
-  {icon:'🖥', text:'Настройка ANPR (распознавание номеров) на въезде'},
-
-  // 📋 Проектирование, нормы, расчёты (25)
-  {icon:'📋', text:'Где обязательна установка СКУД по закону?'},
-  {icon:'📋', text:'Нормы размещения камер на парковке'},
-  {icon:'📋', text:'Как составить ТЗ на систему видеонаблюдения?'},
-  {icon:'📋', text:'Расчёт количества камер для склада 2000 м²'},
-  {icon:'📋', text:'Требования к видеонаблюдению в школах'},
-  {icon:'📋', text:'Расчёт количества камер для офиса 500 м²'},
-  {icon:'📋', text:'Нормы хранения видеоархива по закону'},
-  {icon:'📋', text:'Как правильно составить спецификацию на СКУД?'},
-  {icon:'📋', text:'Требования к видеонаблюдению на АЗС'},
-  {icon:'📋', text:'Расчёт стоимости системы видеонаблюдения на 64 камеры'},
-  {icon:'📋', text:'Нормы освещённости для камер видеонаблюдения'},
-  {icon:'📋', text:'Какие камеры нужны для распознавания лиц?'},
-  {icon:'📋', text:'Требования к СКУД для критической инфраструктуры'},
-  {icon:'📋', text:'Как спроектировать систему СВН для ЖК на 500 квартир?'},
-  {icon:'📋', text:'Расчёт количества турникетов для бизнес-центра'},
-  {icon:'📋', text:'Требования 272-ФЗ к антитеррористической защите'},
-  {icon:'📋', text:'Как обосновать бюджет на СВН перед заказчиком?'},
-  {icon:'📋', text:'Проектирование СКУД для больницы: особенности'},
-  {icon:'📋', text:'Расчёт серверного оборудования для 100+ камер'},
-  {icon:'📋', text:'Как выбрать между облачным и локальным видеонаблюдением?'},
-  {icon:'📋', text:'Нормы установки камер в местах лишения свободы'},
-  {icon:'📋', text:'Требования к видеонаблюдению на производстве'},
-  {icon:'📋', text:'Как подготовить проект для согласования с заказчиком?'},
-  {icon:'📋', text:'Расчёт ROI для системы СКУД в бизнес-центре'},
-  {icon:'📋', text:'Типовые ошибки при проектировании СВН'},
-];
-
-// ── Dynamic welcome ──
-function initWelcome() {
-  // Greeting by time of day
-  const hour = new Date().getHours();
-  let greeting;
-  if (hour >= 5 && hour < 12) greeting = 'Доброе утро!';
-  else if (hour >= 12 && hour < 18) greeting = 'Добрый день!';
-  else greeting = 'Добрый вечер!';
-  
-  document.getElementById('welcomeGreeting').textContent = greeting;
-  
-  // Pick 6 random questions, ensuring category variety
-  const shuffled = [...questionBank].sort(() => Math.random() - 0.5);
-  const seen = new Set();
-  const picked = [];
-  for (const q of shuffled) {
-    if (picked.length >= 6) break;
-    // Try to avoid same icon more than twice
-    const count = picked.filter(p => p.icon === q.icon).length;
-    if (count < 2) {
-      picked.push(q);
-    }
-  }
-  // Fill if needed
-  while (picked.length < 6) {
-    picked.push(shuffled[picked.length]);
-  }
-  
-  const container = document.getElementById('suggestions');
-  container.innerHTML = picked.map(q => 
-    `<button class="suggestion" onclick="ask(this)"><span class="sg-icon">${q.icon}</span>${q.text}</button>`
-  ).join('');
+function getInitials(name){
+  if(!name)return'U';
+  const parts=name.trim().split(' ');
+  if(parts.length>=2)return(parts[0][0]+parts[1][0]).toUpperCase();
+  return name.substring(0,2).toUpperCase();
 }
 
-initWelcome();
+function hideKPForm(){if(kpFormContainer)kpFormContainer.style.display='none'}
 
-// ── Markdown renderer (lightweight) ──
-function renderMd(text) {
-  // Parse markdown tables first (before other transformations)
-  text = text.replace(/(?:^|\n)((?:\|[^\n]+\|\n)+)/g, function(match, tableBlock) {
-    const rows = tableBlock.trim().split('\n').filter(r => r.trim());
-    if (rows.length < 2) return match;
-    
-    // Check if second row is separator (|---|---|)
-    const sepRow = rows[1];
-    if (!/^\|[\s\-:]+(\|[\s\-:]+)+\|?$/.test(sepRow.trim())) return match;
-    
-    let html = '<table>';
-    
-    // Header row
-    const headers = rows[0].split('|').filter(c => c.trim() !== '');
-    html += '<thead><tr>' + headers.map(h => '<th>' + h.trim() + '</th>').join('') + '</tr></thead>';
-    
-    // Data rows
-    html += '<tbody>';
-    for (let i = 2; i < rows.length; i++) {
-      const cells = rows[i].split('|').filter(c => c.trim() !== '');
-      html += '<tr>' + cells.map(c => '<td>' + c.trim() + '</td>').join('') + '</tr>';
-    }
-    html += '</tbody></table>';
-    return '\n' + html + '\n';
-  });
+async function submitKP(e){
+  e.preventDefault();
+  const legal = document.querySelector('input[name="legal"]:checked').value;
+  const client = document.getElementById('kpClient').value.trim();
+  const needs = document.getElementById('kpNeeds').value.trim();
+  const montage = document.getElementById('kpMontage').checked;
+  if(!client || !needs) return;
   
-  return text
-    // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-    // Blockquote
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    // Unordered lists
-    .replace(/^[•\-\*] (.+)$/gm, '<li>$1</li>')
-    // Ordered lists
-    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-    // Wrap consecutive <li> in <ul>
-    .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
-    // Line breaks
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
-    // Wrap in paragraph
-    .replace(/^(.+)/, '<p>$1</p>')
-    .replace(/<p><(h[123]|ul|ol|pre|blockquote)/g, '<$1')
-    .replace(/<\/(h[123]|ul|ol|pre|blockquote)><\/p>/g, '</$1>');
+  const legalNames = {'ip_kontorin':'ИП Конторин','ooo_infinity':'ООО Инфинити Буст','ip_timofeev':'ИП Тимофеев'};
+  let prompt = `Составь КП от ${legalNames[legal]} для клиента "${client}". Нужно: ${needs}. ${montage?'С монтажом.':'Только оборудование.'}`;
+  
+  hideKPForm();
+  inputEl.value = prompt;
+  await send();
+  document.getElementById('kpForm').reset();
+  document.getElementById('le1').checked = true;
 }
 
-// ── Time formatter ──
-function timeNow() {
-  return new Date().toLocaleTimeString('ru', {hour:'2-digit', minute:'2-digit'});
-}
+function formatTime(){return new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}
 
-// ── Add message to UI ──
-function addMessage(text, type, sources = [], skipStore = false) {
-  if (welcomeEl) welcomeEl.style.display = 'none';
+function addMessage(text, type, sources=[], skipAnim=false){
+  hideKPForm();
+  const msg = document.createElement('div');
+  msg.className = `msg ${type}`;
   
-  // Save to local store
-  if (!skipStore && sessionId) {
-    if (!chatStore[sessionId]) chatStore[sessionId] = [];
-    chatStore[sessionId].push({type, text, sources});
-  }
+  let avatar = type==='ai' 
+    ? '<div class="msg-avatar"><i></i><i></i><i></i><i></i></div>'
+    : `<div class="msg-avatar">${userInitials}</div>`;
   
-  const div = document.createElement('div');
-  div.className = `msg ${type}`;
+  let sourcesHtml = sources.length 
+    ? `<div class="msg-sources">${sources.map(s=>`<a href="${s.url}" target="_blank" class="source-chip">${s.title||s.url}</a>`).join('')}</div>` 
+    : '';
   
-  const avatar = type === 'ai' ? '<i></i><i></i><i></i><i></i>' : 'ВЫ';
-  
-  let sourcesHtml = '';
-  if (sources.length > 0) {
-    sourcesHtml = '<div class="msg-sources">' + 
-      sources.slice(0, 5).map(s => 
-        `<a class="source-chip" href="${s.url}" target="_blank">📎 ${s.title.substring(0, 40)}...</a>`
-      ).join('') + '</div>';
-  }
-  
-  div.innerHTML = `
-    <div class="msg-avatar">${avatar}</div>
-    <div class="msg-body">
-      <div class="msg-text">${type === 'ai' ? renderMd(text) : text}</div>
-      ${sourcesHtml}
-      <div class="msg-time">${timeNow()}</div>
-    </div>
-  `;
-  
-  messagesEl.appendChild(div);
+  msg.innerHTML = `${avatar}<div class="msg-body"><div class="msg-text">${type==='ai'?renderMd(text):text}</div>${sourcesHtml}<div class="msg-time">${formatTime()}</div></div>`;
+  messagesEl.appendChild(msg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
-  return div;
+  return msg;
 }
 
-// ── Add search indicator ──
-function addSearchIndicator() {
-  removeTyping(); // убираем "думает" если был
-  const div = document.createElement('div');
-  div.className = 'msg ai';
-  div.id = 'searchIndicator';
-  div.innerHTML = `
-    <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
-    <div class="msg-body">
-      <div class="status-indicator searching">
-        <div class="status-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        </div>
-        <div class="status-text">
-          Ищу информацию в интернете...
-          <span>Проверяю актуальные источники</span>
-        </div>
-      </div>
-      <div class="search-progress"><div class="search-progress-bar"></div></div>
-    </div>
-  `;
-  messagesEl.appendChild(div);
+function addTyping(){
+  const el = document.createElement('div');
+  el.className = 'status-indicator thinking';
+  el.id = 'typingIndicator';
+  el.innerHTML = '<div class="status-icon"><div class="thinking-dots"><i></i><i></i><i></i><i></i></div></div><div class="status-text">Генерирую ответ<span>Claude обрабатывает запрос</span></div>';
+  messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+function removeTyping(){const el=document.getElementById('typingIndicator');if(el)el.remove()}
 
-function removeSearchIndicator() {
-  const el = document.getElementById('searchIndicator');
-  if (el) el.remove();
-}
-
-// ── Add typing/thinking indicator ──
-function addTyping() {
-  const div = document.createElement('div');
-  div.className = 'msg ai';
-  div.id = 'typingIndicator';
-  div.innerHTML = `
-    <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
-    <div class="msg-body">
-      <div class="status-indicator thinking">
-        <div class="status-icon">
-          <div class="thinking-dots"><i></i><i></i><i></i><i></i></div>
-        </div>
-        <div class="status-text">
-          Формирую ответ...
-          <span>Анализирую данные</span>
-        </div>
-      </div>
-    </div>
-  `;
-  messagesEl.appendChild(div);
+function addSearchIndicator(){
+  removeSearchIndicator();
+  const el = document.createElement('div');
+  el.className = 'status-indicator searching';
+  el.id = 'searchIndicator';
+  el.innerHTML = '<div class="status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div><div class="status-text">Ищу в интернете<span>Поиск актуальной информации</span><div class="search-progress"><div class="search-progress-bar"></div></div></div>';
+  messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+function removeSearchIndicator(){const el=document.getElementById('searchIndicator');if(el)el.remove()}
 
-function removeTyping() {
-  const el = document.getElementById('typingIndicator');
-  if (el) el.remove();
-}
-
-// ── Send message (streaming) ──
-async function send() {
+async function send(){
   const text = inputEl.value.trim();
-  if (!text || isGenerating) return;
+  if(!text || isGenerating) return;
   
   isGenerating = true;
   sendBtn.disabled = true;
   inputEl.value = '';
   inputEl.style.height = 'auto';
   
+  hideKPForm();
   addMessage(text, 'user');
   addTyping();
   
   try {
-    // Используем стриминг
-    const response = await fetch('/api/chat/stream', {
+    const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({message: text, session_id: sessionId})
     });
     
+    if(res.status === 401){ window.location.href = '/login'; return; }
     removeTyping();
     
-    if (!response.ok) {
-      const err = await response.json();
-      addMessage(`Ошибка: ${err.detail || 'Не удалось получить ответ'}`, 'ai');
-      return;
-    }
-    
-    // Создаём пустое сообщение для стриминга
-    if (welcomeEl) welcomeEl.style.display = 'none';
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'msg ai';
-    msgDiv.innerHTML = `
-      <div class="msg-avatar"><i></i><i></i><i></i><i></i></div>
-      <div class="msg-body">
-        <div class="msg-text" id="streamText"></div>
-        <div class="msg-time">${timeNow()}</div>
-      </div>
-    `;
-    messagesEl.appendChild(msgDiv);
-    
-    const streamText = document.getElementById('streamText');
+    const aiMsg = addMessage('', 'ai');
+    const streamText = aiMsg.querySelector('.msg-text');
     let fullText = '';
-    
-    const reader = response.body.getReader();
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     
-    while (true) {
-      const {value, done} = await reader.read();
-      if (done) break;
-      
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-      
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            
-            if (data.type === 'text') {
-              fullText += data.content;
-              streamText.innerHTML = renderMd(fullText);
-              messagesEl.scrollTop = messagesEl.scrollHeight;
-            } else if (data.type === 'searching') {
-              addSearchIndicator();
-            } else if (data.type === 'search_done') {
-              removeSearchIndicator();
-            } else if (data.type === 'done') {
-              sessionId = data.session_id;
-              // Save both messages to store
-              if (!chatStore[sessionId]) chatStore[sessionId] = [];
-              chatStore[sessionId].push({type:'user', text, sources:[]});
-              chatStore[sessionId].push({type:'ai', text:fullText, sources:[]});
-              updateChatList(text);
-            } else if (data.type === 'error') {
-              streamText.innerHTML = renderMd(`Ошибка: ${data.content}`);
-            }
-          } catch (e) {}
-        }
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      const chunk = decoder.decode(value, {stream:true});
+      for(const line of chunk.split('\n')){
+        if(!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if(data.type === 'text'){
+            fullText += data.content;
+            streamText.innerHTML = renderMd(fullText);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          } else if(data.type === 'search_start') addSearchIndicator();
+          else if(data.type === 'search_done') removeSearchIndicator();
+          else if(data.type === 'done'){
+            sessionId = data.session_id;
+            if(!chatStore[sessionId]) chatStore[sessionId] = [];
+            chatStore[sessionId].push({type:'user', text});
+            chatStore[sessionId].push({type:'ai', text:fullText});
+            updateChatList(text);
+          } else if(data.type === 'error') streamText.innerHTML = renderMd(`Ошибка: ${data.content}`);
+        } catch(e){}
       }
     }
-    
-    streamText.removeAttribute('id');
-    
-  } catch (err) {
+  } catch(err){
     removeTyping();
-    addMessage(`Ошибка соединения: ${err.message}. Убедитесь, что сервер запущен.`, 'ai');
+    addMessage(`Ошибка: ${err.message}`, 'ai');
   } finally {
     isGenerating = false;
     sendBtn.disabled = false;
@@ -752,102 +402,61 @@ async function send() {
   }
 }
 
-// ── Send from suggestion ──
-function ask(el) {
-  inputEl.value = el.textContent;
-  send();
-}
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}
 
-// ── Keyboard handler ──
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    send();
-  }
-}
-
-// ── Auto-resize textarea ──
-inputEl.addEventListener('input', function() {
+inputEl.addEventListener('input', function(){
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 150) + 'px';
 });
 
-// ── New chat ──
-function newChat() {
+function newChat(){
   sessionId = null;
   messagesEl.innerHTML = '';
-  if (welcomeEl) {
-    messagesEl.appendChild(welcomeEl);
-    welcomeEl.style.display = '';
-    initWelcome();
-  } else {
-    location.reload();
-  }
-  // Deactivate all sidebar items
+  if(kpFormContainer){messagesEl.appendChild(kpFormContainer);kpFormContainer.style.display=''}
   document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
   inputEl.focus();
 }
 
-// ── Switch to existing chat (load from API) ──
-async function switchChat(sid) {
-  if (sid === sessionId || isGenerating) return;
-  
+async function switchChat(sid){
+  if(sid === sessionId || isGenerating) return;
   sessionId = sid;
   messagesEl.innerHTML = '';
-  if (welcomeEl) welcomeEl.style.display = 'none';
+  hideKPForm();
+  document.querySelectorAll('.chat-item').forEach(c => c.classList.toggle('active', c.dataset.id === sid));
   
-  // Highlight active
-  document.querySelectorAll('.chat-item').forEach(c => {
-    c.classList.toggle('active', c.dataset.id === sid);
-  });
-  
-  // Try local store first, then API
-  if (chatStore[sid] && chatStore[sid].length > 0) {
-    chatStore[sid].forEach(m => addMessage(m.text, m.type, m.sources || [], true));
+  if(chatStore[sid]?.length){
+    chatStore[sid].forEach(m => addMessage(m.text, m.type, [], true));
   } else {
     try {
       const res = await fetch(`/api/sessions/${sid}/messages`);
-      if (res.ok) {
+      if(res.ok){
         const msgs = await res.json();
-        msgs.forEach(m => {
-          const type = m.role === 'user' ? 'user' : 'ai';
-          addMessage(m.content, type, [], true);
-        });
-        // Cache locally
-        chatStore[sid] = msgs.map(m => ({type: m.role === 'user' ? 'user' : 'ai', text: m.content, sources: []}));
+        msgs.forEach(m => addMessage(m.content, m.role==='user'?'user':'ai', [], true));
+        chatStore[sid] = msgs.map(m => ({type:m.role==='user'?'user':'ai', text:m.content}));
       }
-    } catch(e) { console.error('Failed to load chat:', e); }
+    } catch(e){}
   }
-  
   inputEl.focus();
 }
 
-// ── Update chat list in sidebar ──
-function updateChatList(firstMessage) {
-  if (!sessionId) return;
-  
-  const existing = document.querySelector(`.chat-item[data-id="${sessionId}"]`);
-  if (existing) return;
+function updateChatList(firstMessage){
+  if(!sessionId) return;
+  if(document.querySelector(`.chat-item[data-id="${sessionId}"]`)) return;
   
   const item = document.createElement('div');
   item.className = 'chat-item active';
   item.dataset.id = sessionId;
-  item.innerHTML = `<div class="dot"></div>${firstMessage.substring(0, 35)}${firstMessage.length > 35 ? '...' : ''}`;
-  
+  item.innerHTML = `<div class="dot"></div>${firstMessage.substring(0,35)}${firstMessage.length>35?'...':''}`;
   document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
-  
-  const sid = sessionId;
-  item.onclick = () => switchChat(sid);
-  
+  item.onclick = () => switchChat(sessionId);
   chatListEl.prepend(item);
 }
 
-// ── Load sessions from API on page load ──
-async function loadSessions() {
+async function loadSessions(){
   try {
     const res = await fetch('/api/sessions');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    if (!res.ok) return;
+    if(res.status === 401){ window.location.href = '/login'; return; }
+    if(!res.ok) return;
     const sessions = await res.json();
     chatListEl.innerHTML = '';
     sessions.forEach(s => {
@@ -855,32 +464,28 @@ async function loadSessions() {
       item.className = 'chat-item';
       item.dataset.id = s.id;
       const title = s.title || 'Новый чат';
-      item.innerHTML = `<div class="dot"></div>${title.substring(0, 35)}${title.length > 35 ? '...' : ''}`;
+      item.innerHTML = `<div class="dot"></div>${title.substring(0,35)}${title.length>35?'...':''}`;
       item.onclick = () => switchChat(s.id);
       chatListEl.appendChild(item);
     });
-  } catch(e) { console.error('Failed to load sessions:', e); }
+  } catch(e){}
 }
 
-// ── Load current user ──
-async function loadUser() {
+async function loadUser(){
   try {
     const res = await fetch('/auth/me');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    if (res.ok) {
+    if(res.status === 401){ window.location.href = '/login'; return; }
+    if(res.ok){
       const user = await res.json();
-      const el = document.getElementById('userInfo');
-      if (el) el.textContent = user.name || user.email || '';
+      document.getElementById('userInfo').textContent = user.name || '';
+      userInitials = getInitials(user.name || '');
     }
-  } catch(e) {}
+  } catch(e){}
 }
 
 loadUser();
 loadSessions();
-
-// Focus input on load
 inputEl.focus();
 </script>
-
 </body>
 </html>
