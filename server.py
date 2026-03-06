@@ -17,7 +17,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse, Response
 from pydantic import BaseModel
@@ -150,24 +150,14 @@ SYSTEM_PROMPT = """Ты — TechBase AI, экспертный техническ
 
 ### ПРАВИЛА ПОИСКА ЦЕН (КРИТИЧЕСКИ ВАЖНО!):
 
-**Приоритет поиска — СНАЧАЛА сайты поставщиков:**
-1. ПЕРВЫМ ДЕЛОМ ищи на сайтах наших поставщиков:
-   - dis-kont.ru (Dahua, Hikvision, HiWatch, AltCam)
-   - layta.ru (RVI, HiWatch, Hikvision, Uniview, кабель)
-   - ami-com.ru (Амиком)
-   - tinko.ru (ТИНКО)
-   - infocom-pro.ru (Dahua, iMOU, EZ-IP)
-   - netlab.ru (TP-Link, D-Link, Mikrotik, Dahua, ЦМО)
-   - ans-group.ru (ДКС, Hyperline, Cabeus, IEK)
-   - lanset.ru (кабель, СКС)
-   - k-td.ru (ST - видеонаблюдение)
-   - electronic-machines.ru (НИЦ Технологии)
-
-2. Если на сайтах поставщиков НЕ нашёл — тогда ищи в общем интернете
-
-**Формат поиска:**
-- Ищи: "site:dis-kont.ru [модель]" или "[модель] купить dis-kont.ru"
-- Или просто: "[модель] цена купить 2026"
+**Приоритет поиска:**
+1. СНАЧАЛА вызови инструмент `search_prices` — это наша внутренняя база цен
+2. Если в базе НЕ нашёл — тогда используй веб-поиск на сайтах поставщиков:
+   - dis-kont.ru, layta.ru, tinko.ru (Hikvision, Dahua, HiWatch)
+   - infocom-pro.ru (Dahua, iMOU)
+   - netlab.ru (TP-Link, D-Link, Mikrotik)
+   - ans-group.ru (ДКС, Hyperline, Cabeus)
+3. Если и там не нашёл — ищи в общем интернете
 
 **Цены БЕЗ наценки:**
 - Используй найденную розничную цену КАК ЕСТЬ
@@ -197,7 +187,7 @@ SYSTEM_PROMPT = """Ты — TechBase AI, экспертный техническ
 - Пусконаладка системы: 5000-15000₽
 
 ### ВАЖНО:
-- ВСЕГДА ищи актуальные цены, не используй данные из памяти
+- Сначала search_prices, потом веб-поиск если не нашёл
 - После поиска цен ОБЯЗАТЕЛЬНО вызови инструмент generate_kp
 - НЕ пиши текстом что "сейчас сформирую" — СРАЗУ вызывай generate_kp
 - Если не нашёл точную цену — используй примерную цену похожего оборудования
@@ -320,6 +310,27 @@ KP_TOOL = {
     }
 }
 
+# ── Tool для поиска цен в базе ──
+PRICE_SEARCH_TOOL = {
+    "name": "search_prices",
+    "description": """Поиск цен на оборудование в нашей базе данных.
+    
+Используй ПЕРЕД веб-поиском! Если товар есть в базе — бери цену оттуда.
+База содержит актуальные розничные цены от наших поставщиков.
+
+Если в базе не найдено — тогда используй веб-поиск.""",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Поисковый запрос: артикул (DS-2CD2143G2) или название (камера Hikvision 4Мп)"
+            }
+        },
+        "required": ["query"]
+    }
+}
+
 # ── Database ──
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 db_pool = None
@@ -378,6 +389,24 @@ async def init_db():
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
                 CREATE INDEX IF NOT EXISTS idx_token_user ON token_usage(user_id);
+                
+                CREATE TABLE IF NOT EXISTS prices (
+                    id SERIAL PRIMARY KEY,
+                    sku TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    brand TEXT,
+                    category TEXT,
+                    price_retail NUMERIC,
+                    price_opt NUMERIC,
+                    source TEXT,
+                    source_url TEXT,
+                    in_stock BOOLEAN DEFAULT TRUE,
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(sku, source)
+                );
+                CREATE INDEX IF NOT EXISTS idx_prices_sku ON prices(sku);
+                CREATE INDEX IF NOT EXISTS idx_prices_name ON prices USING gin(to_tsvector('russian', name));
+                CREATE INDEX IF NOT EXISTS idx_prices_brand ON prices(brand);
                 CREATE INDEX IF NOT EXISTS idx_token_date ON token_usage(created_at);
             ''')
             # Migration: add new columns
@@ -979,6 +1008,34 @@ async def handle_tool_use(tool_name: str, tool_input: dict, user: dict) -> str:
 - **Всего: {format_price(result['total'])} руб**
 
 📥 [Скачать PDF]({result['download_url']})"""
+    
+    elif tool_name == "search_prices":
+        query = tool_input.get("query", "")
+        if not query or not db_pool:
+            return "База цен недоступна. Используй веб-поиск."
+        
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch('''
+                SELECT sku, name, brand, price_retail, source, in_stock
+                FROM prices
+                WHERE sku ILIKE $1 OR name ILIKE $1
+                ORDER BY 
+                    CASE WHEN sku ILIKE $1 THEN 0 ELSE 1 END,
+                    price_retail ASC
+                LIMIT 10
+            ''', f'%{query}%')
+        
+        if not rows:
+            return f"В базе не найдено товаров по запросу '{query}'. Используй веб-поиск."
+        
+        results = []
+        for r in rows:
+            price = f"{int(r['price_retail']):,}".replace(',', ' ') + " руб" if r['price_retail'] else "цена не указана"
+            stock = "✅ в наличии" if r['in_stock'] else "⏳ под заказ"
+            results.append(f"- **{r['sku']}** ({r['brand']}): {price} {stock}")
+        
+        return f"Найдено в базе цен:\n" + "\n".join(results)
+    
     return "Неизвестный инструмент"
 
 # ── Protected API endpoints ──
@@ -1035,6 +1092,7 @@ async def chat_stream(req: ChatRequest, request: Request):
     # Список инструментов
     tools = [
         {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
+        PRICE_SEARCH_TOOL,
         KP_TOOL
     ]
 
@@ -1086,10 +1144,13 @@ async def chat_stream(req: ChatRequest, request: Request):
                 
                 # Проверяем на tool_use
                 for block in final_message.content:
-                    if block.type == "tool_use" and block.name == "generate_kp":
-                        yield f"data: {json.dumps({'type': 'generating_kp', 'content': 'Формирую КП...'})}\n\n"
+                    if block.type == "tool_use" and block.name in ["generate_kp", "search_prices"]:
+                        if block.name == "generate_kp":
+                            yield f"data: {json.dumps({'type': 'generating_kp', 'content': 'Формирую КП...'})}\n\n"
+                        elif block.name == "search_prices":
+                            yield f"data: {json.dumps({'type': 'searching_prices', 'content': 'Ищу в базе цен...'})}\n\n"
                         
-                        # Выполняем генерацию КП
+                        # Выполняем инструмент
                         tool_result = await handle_tool_use(block.name, block.input, user)
                         
                         # Конвертируем content в формат для API (убираем server_tool_use)
@@ -1655,6 +1716,115 @@ loadUsers();
 </script>
 </body>
 </html>""")
+
+# ── Prices API ──
+@app.get("/api/prices/search")
+async def search_prices(q: str, request: Request):
+    """Поиск товаров в базе цен"""
+    require_auth(request)
+    if not db_pool or not q:
+        return []
+    
+    async with db_pool.acquire() as conn:
+        # Поиск по SKU или названию
+        rows = await conn.fetch('''
+            SELECT sku, name, brand, category, price_retail, price_opt, source, in_stock, updated_at
+            FROM prices
+            WHERE sku ILIKE $1 OR name ILIKE $1
+            ORDER BY 
+                CASE WHEN sku ILIKE $1 THEN 0 ELSE 1 END,
+                price_retail ASC
+            LIMIT 20
+        ''', f'%{q}%')
+        
+        return [
+            {
+                "sku": r['sku'],
+                "name": r['name'],
+                "brand": r['brand'],
+                "category": r['category'],
+                "price": float(r['price_retail']) if r['price_retail'] else None,
+                "price_opt": float(r['price_opt']) if r['price_opt'] else None,
+                "source": r['source'],
+                "in_stock": r['in_stock'],
+                "updated": r['updated_at'].strftime('%d.%m.%Y') if r['updated_at'] else None
+            }
+            for r in rows
+        ]
+
+@app.post("/api/prices/upload")
+async def upload_prices(request: Request, file: UploadFile = File(...)):
+    """Загрузка прайс-листа из Excel"""
+    require_admin(request)
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(400, "Только Excel файлы (.xlsx, .xls)")
+    
+    import pandas as pd
+    from io import BytesIO
+    
+    content = await file.read()
+    df = pd.read_excel(BytesIO(content))
+    
+    # Ожидаемые колонки: sku, name, brand, category, price_retail, price_opt, source
+    required_cols = ['sku', 'name', 'price_retail']
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise HTTPException(400, f"Отсутствуют колонки: {', '.join(missing)}")
+    
+    inserted = 0
+    updated = 0
+    
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            for _, row in df.iterrows():
+                try:
+                    result = await conn.execute('''
+                        INSERT INTO prices (sku, name, brand, category, price_retail, price_opt, source, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                        ON CONFLICT (sku, source) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            brand = EXCLUDED.brand,
+                            category = EXCLUDED.category,
+                            price_retail = EXCLUDED.price_retail,
+                            price_opt = EXCLUDED.price_opt,
+                            updated_at = NOW()
+                    ''',
+                        str(row['sku']),
+                        str(row['name']),
+                        str(row.get('brand', '')) or None,
+                        str(row.get('category', '')) or None,
+                        float(row['price_retail']) if pd.notna(row['price_retail']) else None,
+                        float(row.get('price_opt')) if pd.notna(row.get('price_opt')) else None,
+                        str(row.get('source', 'manual')) or 'manual'
+                    )
+                    if 'INSERT' in result:
+                        inserted += 1
+                    else:
+                        updated += 1
+                except Exception as e:
+                    print(f"Ошибка загрузки строки {row.get('sku')}: {e}")
+    
+    return {"inserted": inserted, "updated": updated, "total": inserted + updated}
+
+@app.get("/api/prices/stats")
+async def prices_stats(request: Request):
+    """Статистика базы цен"""
+    require_auth(request)
+    if not db_pool:
+        return {"total": 0, "brands": []}
+    
+    async with db_pool.acquire() as conn:
+        total = await conn.fetchval('SELECT COUNT(*) FROM prices')
+        brands = await conn.fetch('''
+            SELECT brand, COUNT(*) as cnt FROM prices 
+            WHERE brand IS NOT NULL 
+            GROUP BY brand ORDER BY cnt DESC LIMIT 10
+        ''')
+        return {
+            "total": total,
+            "brands": [{"name": r['brand'], "count": r['cnt']} for r in brands]
+        }
 
 # ── Frontend ──
 @app.get("/")
