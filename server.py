@@ -1077,9 +1077,23 @@ async def chat_stream(req: ChatRequest, request: Request):
                         # Выполняем генерацию КП
                         tool_result = await handle_tool_use(block.name, block.input, user)
                         
+                        # Конвертируем content в формат для API (убираем server_tool_use)
+                        assistant_content = []
+                        for b in final_message.content:
+                            if b.type == "text":
+                                assistant_content.append({"type": "text", "text": b.text})
+                            elif b.type == "tool_use":
+                                assistant_content.append({
+                                    "type": "tool_use",
+                                    "id": b.id,
+                                    "name": b.name,
+                                    "input": b.input
+                                })
+                            # Пропускаем server_tool_use и server_tool_result
+                        
                         # Отправляем результат обратно Claude для формирования ответа
                         tool_messages = recent_messages + [
-                            {"role": "assistant", "content": final_message.content},
+                            {"role": "assistant", "content": assistant_content},
                             {
                                 "role": "user",
                                 "content": [{
