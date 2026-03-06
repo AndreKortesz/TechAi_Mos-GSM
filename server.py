@@ -1710,9 +1710,192 @@ document.getElementById('chatModal').addEventListener('click', e => {
     if (e.target.id === 'chatModal') closeChat();
 });
 
-// Init
+# Init
 loadStats();
 loadUsers();
+</script>
+</body>
+</html>""")
+
+# ── Prices Admin Page ──
+@app.get("/admin/prices")
+async def admin_prices_page(request: Request):
+    """Страница управления ценами"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    if not is_admin(user):
+        return HTMLResponse("<h1>Доступ запрещён</h1>", status_code=403)
+    
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>База цен — Mos-GSM AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Roboto',sans-serif;background:#F5F3EF;color:#1A1A1A;min-height:100vh}
+.header{background:#1A1A1A;color:#F3C04D;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:20px;font-weight:500}
+.header-links a{color:#F3C04D;text-decoration:none;font-size:14px;margin-left:20px}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.card{background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.card h2{font-size:18px;font-weight:600;margin-bottom:16px;color:#1A1A1A}
+.upload-area{border:2px dashed #C8C4BC;border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:.2s}
+.upload-area:hover{border-color:#C9982E;background:rgba(201,152,46,.04)}
+.upload-area.dragover{border-color:#C9982E;background:rgba(201,152,46,.1)}
+.upload-area input{display:none}
+.upload-area p{color:#6B6560;margin-bottom:8px}
+.upload-area .hint{font-size:12px;color:#9A9590}
+.btn{padding:12px 24px;border-radius:8px;border:none;font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;transition:.2s}
+.btn-primary{background:#C9982E;color:#fff}
+.btn-primary:hover{background:#A67D25}
+.btn-secondary{background:#E8E6E3;color:#1A1A1A}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px}
+.stat{background:#F9F8F6;border-radius:8px;padding:16px;text-align:center}
+.stat .num{font-size:24px;font-weight:700;color:#C9982E}
+.stat .label{font-size:12px;color:#6B6560;margin-top:4px}
+.search-box{display:flex;gap:12px;margin-bottom:20px}
+.search-box input{flex:1;padding:12px 16px;border:1px solid #E8E6E3;border-radius:8px;font-size:14px}
+.search-box input:focus{outline:none;border-color:#C9982E}
+table{width:100%;border-collapse:collapse}
+th,td{padding:12px;text-align:left;border-bottom:1px solid #E8E6E3;font-size:13px}
+th{font-size:11px;color:#6B6560;text-transform:uppercase;font-weight:500}
+tr:hover{background:#F9F8F6}
+.price{font-weight:600;color:#1A1A1A}
+.brand{background:#E8E6E3;padding:2px 8px;border-radius:4px;font-size:11px}
+.result-msg{padding:16px;border-radius:8px;margin-top:16px}
+.result-msg.success{background:#E8F5E9;color:#2E7D32}
+.result-msg.error{background:#FFEBEE;color:#C62828}
+.format-hint{background:#FFF8E1;border-radius:8px;padding:16px;margin-top:16px}
+.format-hint h4{font-size:14px;margin-bottom:8px;color:#F57F17}
+.format-hint code{background:#fff;padding:2px 6px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>📦 База цен</h1>
+    <div class="header-links">
+        <a href="/admin">← Админка</a>
+        <a href="/">На главную</a>
+    </div>
+</div>
+
+<div class="container">
+    <div class="stats" id="stats">
+        <div class="stat"><div class="num" id="totalProducts">—</div><div class="label">Товаров</div></div>
+        <div class="stat"><div class="num" id="totalBrands">—</div><div class="label">Брендов</div></div>
+    </div>
+
+    <div class="card">
+        <h2>📤 Загрузить прайс-лист</h2>
+        <div class="upload-area" id="uploadArea">
+            <input type="file" id="fileInput" accept=".xlsx,.xls">
+            <p>📁 Перетащите Excel-файл сюда или кликните для выбора</p>
+            <div class="hint">Поддерживаются форматы .xlsx и .xls</div>
+        </div>
+        <div id="uploadResult"></div>
+        
+        <div class="format-hint">
+            <h4>📋 Формат файла</h4>
+            <p>Excel должен содержать колонки:</p>
+            <p><code>sku</code> — артикул (обязательно)</p>
+            <p><code>name</code> — название товара (обязательно)</p>
+            <p><code>price_retail</code> — розничная цена (обязательно)</p>
+            <p><code>brand</code> — бренд (опционально)</p>
+            <p><code>category</code> — категория (опционально)</p>
+            <p><code>source</code> — источник, например "tinko.ru" (опционально)</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🔍 Поиск в базе</h2>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Артикул или название...">
+            <button class="btn btn-primary" onclick="searchPrices()">Найти</button>
+        </div>
+        <table id="resultsTable">
+            <thead>
+                <tr><th>Артикул</th><th>Название</th><th>Бренд</th><th>Цена</th><th>Источник</th></tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+
+// Drag & Drop
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+});
+uploadArea.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { if (fileInput.files.length) uploadFile(fileInput.files[0]); });
+
+async function uploadFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    document.getElementById('uploadResult').innerHTML = '<div class="result-msg">⏳ Загружаю...</div>';
+    
+    try {
+        const resp = await fetch('/api/prices/upload', { method: 'POST', body: formData });
+        const data = await resp.json();
+        
+        if (resp.ok) {
+            document.getElementById('uploadResult').innerHTML = 
+                `<div class="result-msg success">✅ Загружено! Добавлено: ${data.inserted}, обновлено: ${data.updated}</div>`;
+            loadStats();
+        } else {
+            document.getElementById('uploadResult').innerHTML = 
+                `<div class="result-msg error">❌ Ошибка: ${data.detail || 'Неизвестная ошибка'}</div>`;
+        }
+    } catch (e) {
+        document.getElementById('uploadResult').innerHTML = 
+            `<div class="result-msg error">❌ Ошибка сети</div>`;
+    }
+}
+
+async function loadStats() {
+    try {
+        const resp = await fetch('/api/prices/stats');
+        const data = await resp.json();
+        document.getElementById('totalProducts').textContent = data.total || 0;
+        document.getElementById('totalBrands').textContent = data.brands?.length || 0;
+    } catch (e) {}
+}
+
+async function searchPrices() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return;
+    
+    const resp = await fetch(`/api/prices/search?q=${encodeURIComponent(q)}`);
+    const data = await resp.json();
+    
+    document.getElementById('resultsBody').innerHTML = data.map(r => `
+        <tr>
+            <td><strong>${r.sku}</strong></td>
+            <td>${r.name}</td>
+            <td><span class="brand">${r.brand || '—'}</span></td>
+            <td class="price">${r.price ? r.price.toLocaleString('ru') + ' ₽' : '—'}</td>
+            <td>${r.source || '—'}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="5">Ничего не найдено</td></tr>';
+}
+
+document.getElementById('searchInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter') searchPrices();
+});
+
+loadStats();
 </script>
 </body>
 </html>""")
