@@ -64,11 +64,20 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .messages::-webkit-scrollbar{width:5px}
 .messages::-webkit-scrollbar-thumb{background:var(--text3);border-radius:3px}
 
-/* ═══ ФОРМА КП ═══ */
+/* ═══ ФОРМА КП (сворачиваемая) ═══ */
 .kp-form-container{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:30px;gap:20px}
-.kp-form{background:#FAFAFA;border:1px solid var(--border2);border-radius:16px;padding:28px 32px;width:100%;max-width:520px;box-shadow:0 4px 24px rgba(0,0,0,.04)}
-.kp-form-title{font-size:18px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:var(--text)}
-.kp-form-title svg{width:24px;height:24px;color:var(--accent)}
+.kp-card{background:#FAFAFA;border:1px solid var(--border2);border-radius:16px;width:100%;max-width:520px;box-shadow:0 4px 24px rgba(0,0,0,.04);overflow:hidden}
+.kp-card-header{padding:16px 24px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:.2s;user-select:none}
+.kp-card-header:hover{background:rgba(212,165,58,.04)}
+.kp-card-title{font-size:16px;font-weight:700;display:flex;align-items:center;gap:10px;color:var(--text)}
+.kp-card-title svg{width:22px;height:22px;color:var(--accent)}
+.kp-card-toggle{width:28px;height:28px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;transition:.3s}
+.kp-card-toggle svg{width:16px;height:16px;color:var(--text2);transition:.3s}
+.kp-card.open .kp-card-toggle{background:var(--accent)}
+.kp-card.open .kp-card-toggle svg{color:#1A1A1A;transform:rotate(180deg)}
+.kp-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.kp-card.open .kp-card-body{max-height:600px}
+.kp-form{padding:0 24px 24px}
 .kp-field{margin-bottom:18px}
 .kp-label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
 .kp-radio-group{display:flex;gap:8px;flex-wrap:wrap}
@@ -92,6 +101,18 @@ textarea.kp-input{min-height:80px}
 .kp-divider{display:flex;align-items:center;gap:16px;width:100%;max-width:520px;color:var(--text3);font-size:13px}
 .kp-divider::before,.kp-divider::after{content:'';flex:1;height:1px;background:var(--border2)}
 .kp-hint{font-size:12px;color:var(--text3);text-align:center;max-width:400px;line-height:1.5}
+
+/* Suggestions */
+.suggestions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;max-width:650px}
+.suggestion{padding:9px 16px;border-radius:20px;border:1px solid var(--border2);background:var(--bg);color:var(--text2);font-size:13px;font-family:inherit;cursor:pointer;transition:.25s;white-space:nowrap;opacity:0;animation:suggestIn .4s ease forwards}
+.suggestion:nth-child(1){animation-delay:.1s}
+.suggestion:nth-child(2){animation-delay:.18s}
+.suggestion:nth-child(3){animation-delay:.26s}
+.suggestion:nth-child(4){animation-delay:.34s}
+.suggestion:nth-child(5){animation-delay:.42s}
+.suggestion:nth-child(6){animation-delay:.5s}
+@keyframes suggestIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.suggestion:hover{border-color:var(--accent);color:#8B6914;background:rgba(212,165,58,.06);transform:translateY(-1px)}
 
 /* Messages */
 .msg{display:flex;gap:12px;max-width:85%;animation:fadeIn .3s ease}
@@ -198,47 +219,64 @@ textarea.kp-input{min-height:80px}
 
     <div class="messages" id="messages">
       <div class="kp-form-container" id="kpFormContainer">
-        <form class="kp-form" id="kpForm" onsubmit="submitKP(event)">
-          <div class="kp-form-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            Быстрое КП
-          </div>
-
-          <div class="kp-field">
-            <label class="kp-label">Юрлицо</label>
-            <div class="kp-radio-group">
-              <input type="radio" name="legal" value="ip_kontorin" id="le1" class="kp-radio" checked>
-              <label for="le1" class="kp-radio-label">ИП Конторин<small>без НДС</small></label>
-              <input type="radio" name="legal" value="ooo_infinity" id="le2" class="kp-radio">
-              <label for="le2" class="kp-radio-label">ООО Инфинити<small>НДС 22%</small></label>
-              <input type="radio" name="legal" value="ip_timofeev" id="le3" class="kp-radio">
-              <label for="le3" class="kp-radio-label">ИП Тимофеев<small>без НДС</small></label>
+        <div class="kp-card" id="kpCard">
+          <div class="kp-card-header" onclick="toggleKPForm()">
+            <div class="kp-card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Быстрое КП
+            </div>
+            <div class="kp-card-toggle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
           </div>
+          <div class="kp-card-body">
+            <form class="kp-form" id="kpForm" onsubmit="submitKP(event)">
+              <div class="kp-field">
+                <label class="kp-label">Юрлицо</label>
+                <div class="kp-radio-group">
+                  <input type="radio" name="legal" value="ip_kontorin" id="le1" class="kp-radio" checked>
+                  <label for="le1" class="kp-radio-label">ИП Конторин<small>без НДС</small></label>
+                  <input type="radio" name="legal" value="ooo_infinity" id="le2" class="kp-radio">
+                  <label for="le2" class="kp-radio-label">ООО Инфинити<small>НДС 22%</small></label>
+                  <input type="radio" name="legal" value="ip_timofeev" id="le3" class="kp-radio">
+                  <label for="le3" class="kp-radio-label">ИП Тимофеев<small>без НДС</small></label>
+                </div>
+              </div>
 
-          <div class="kp-field">
-            <label class="kp-label">Клиент</label>
-            <input type="text" class="kp-input" id="kpClient" placeholder="Название компании или ФИО" required>
+              <div class="kp-field">
+                <label class="kp-label">Клиент</label>
+                <input type="text" class="kp-input" id="kpClient" placeholder="Название компании или ФИО" required>
+              </div>
+
+              <div class="kp-field">
+                <label class="kp-label">Что нужно</label>
+                <textarea class="kp-input" id="kpNeeds" placeholder="Например: 4 камеры 2Мп, регистратор с PoE, диск 1ТБ" required></textarea>
+              </div>
+
+              <div class="kp-checkbox-wrap">
+                <input type="checkbox" class="kp-checkbox" id="kpMontage" checked>
+                <label for="kpMontage" class="kp-checkbox-text">Включить монтажные работы</label>
+              </div>
+
+              <button type="submit" class="kp-submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Сформировать КП
+              </button>
+            </form>
           </div>
-
-          <div class="kp-field">
-            <label class="kp-label">Что нужно</label>
-            <textarea class="kp-input" id="kpNeeds" placeholder="Например: 4 камеры 2Мп, регистратор с PoE, диск 1ТБ" required></textarea>
-          </div>
-
-          <div class="kp-checkbox-wrap">
-            <input type="checkbox" class="kp-checkbox" id="kpMontage" checked>
-            <label for="kpMontage" class="kp-checkbox-text">Включить монтажные работы</label>
-          </div>
-
-          <button type="submit" class="kp-submit">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Сформировать КП
-          </button>
-        </form>
+        </div>
 
         <div class="kp-divider">или задайте вопрос в чате</div>
         <p class="kp-hint">Для сложных проектов и консультаций используйте чат ниже</p>
+        
+        <div class="suggestions">
+          <button class="suggestion" onclick="ask(this)">📹 Сравни Hikvision и Dahua</button>
+          <button class="suggestion" onclick="ask(this)">🔐 Какой контроллер СКУД выбрать?</button>
+          <button class="suggestion" onclick="ask(this)">💾 Какой HDD нужен для 8 камер?</button>
+          <button class="suggestion" onclick="ask(this)">📡 Чем PoE лучше обычного питания?</button>
+          <button class="suggestion" onclick="ask(this)">🏢 Видеонаблюдение для склада</button>
+          <button class="suggestion" onclick="ask(this)">🚪 СКУД на 50 сотрудников</button>
+        </div>
       </div>
     </div>
 
@@ -403,6 +441,16 @@ async function send(){
 }
 
 function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}
+
+function ask(el){
+  inputEl.value = el.textContent;
+  send();
+}
+
+function toggleKPForm(){
+  const card = document.getElementById('kpCard');
+  card.classList.toggle('open');
+}
 
 inputEl.addEventListener('input', function(){
   this.style.height = 'auto';
