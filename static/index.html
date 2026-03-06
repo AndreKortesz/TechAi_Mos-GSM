@@ -21,7 +21,8 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 
 /* Sidebar */
 .sidebar{background:#F5F3EF;border-right:1px solid #E5E2DC;display:flex;flex-direction:column;padding:16px;color:#1A1A1A}
-.sidebar-header{display:flex;align-items:center;gap:10px;padding:8px 4px 20px;border-bottom:1px solid #E5E2DC;margin-bottom:12px}
+.sidebar-header{display:flex;align-items:center;gap:10px;padding:8px 4px 20px;border-bottom:1px solid #E5E2DC;margin-bottom:12px;cursor:pointer;transition:.2s;border-radius:var(--radius-sm)}
+.sidebar-header:hover{background:rgba(201,152,46,.06)}
 .logo-mark{width:36px;height:36px;border-radius:10px;background:#1A1A1A;display:flex;align-items:flex-end;justify-content:center;gap:2px;padding-bottom:6px}
 .logo-mark i{display:block;width:4px;border-radius:1.5px;background:#F3C04D}
 .logo-mark i:nth-child(1){height:4px}
@@ -35,10 +36,14 @@ body{font-family:'Roboto Condensed','Roboto',sans-serif;background:var(--bg);col
 .chat-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
 .chat-list::-webkit-scrollbar{width:4px}
 .chat-list::-webkit-scrollbar-thumb{background:#C8C4BC;border-radius:2px}
-.chat-item{padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:.15s;font-size:13px;color:#6B6560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
+.chat-item{padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:.15s;font-size:13px;color:#6B6560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px;position:relative}
 .chat-item:hover{background:rgba(0,0,0,.04);color:#1A1A1A}
 .chat-item.active{background:rgba(201,152,46,.1);color:#9A7520}
 .chat-item .dot{width:6px;height:6px;border-radius:50%;background:#D4A53A;flex-shrink:0}
+.chat-item .chat-title{flex:1;overflow:hidden;text-overflow:ellipsis}
+.chat-item .delete-btn{display:none;width:20px;height:20px;border:none;background:transparent;color:#9A9590;cursor:pointer;border-radius:4px;flex-shrink:0;padding:0;align-items:center;justify-content:center}
+.chat-item .delete-btn:hover{background:rgba(220,53,69,.1);color:#dc3545}
+.chat-item:hover .delete-btn{display:flex}
 .sidebar-footer{padding-top:12px;border-top:1px solid #E5E2DC;margin-top:12px;font-size:12px;color:#9A9590;text-align:center;line-height:1.5}
 .sidebar-footer a{color:#C9982E;text-decoration:none}
 
@@ -194,7 +199,7 @@ textarea.kp-input{min-height:80px}
 
 <div class="app">
   <aside class="sidebar">
-    <div class="sidebar-header">
+    <div class="sidebar-header" onclick="newChat()">
       <div class="logo-mark"><i></i><i></i><i></i><i></i></div>
       <div class="logo-text">Mos-<span>GSM</span></div>
     </div>
@@ -452,6 +457,21 @@ function toggleKPForm(){
   card.classList.toggle('open');
 }
 
+async function deleteChat(chatId){
+  if(!confirm('Удалить этот чат?')) return;
+  try {
+    const res = await fetch(`/api/sessions/${chatId}`, {method: 'DELETE'});
+    if(res.ok){
+      const item = document.querySelector(`.chat-item[data-id="${chatId}"]`);
+      if(item) item.remove();
+      delete chatStore[chatId];
+      if(sessionId === chatId) newChat();
+    }
+  } catch(e){
+    console.error('Ошибка удаления:', e);
+  }
+}
+
 inputEl.addEventListener('input', function(){
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 150) + 'px';
@@ -494,7 +514,8 @@ function updateChatList(firstMessage){
   const item = document.createElement('div');
   item.className = 'chat-item active';
   item.dataset.id = sessionId;
-  item.innerHTML = `<div class="dot"></div>${firstMessage.substring(0,35)}${firstMessage.length>35?'...':''}`;
+  const title = firstMessage.substring(0,30) + (firstMessage.length>30?'...':'');
+  item.innerHTML = `<div class="dot"></div><span class="chat-title">${title}</span><button class="delete-btn" onclick="event.stopPropagation();deleteChat('${sessionId}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>`;
   document.querySelectorAll('.chat-item').forEach(c => c.classList.remove('active'));
   item.onclick = () => switchChat(sessionId);
   chatListEl.prepend(item);
@@ -511,8 +532,8 @@ async function loadSessions(){
       const item = document.createElement('div');
       item.className = 'chat-item';
       item.dataset.id = s.id;
-      const title = s.title || 'Новый чат';
-      item.innerHTML = `<div class="dot"></div>${title.substring(0,35)}${title.length>35?'...':''}`;
+      const title = (s.title || 'Новый чат').substring(0,30) + ((s.title || '').length>30?'...':'');
+      item.innerHTML = `<div class="dot"></div><span class="chat-title">${title}</span><button class="delete-btn" onclick="event.stopPropagation();deleteChat('${s.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>`;
       item.onclick = () => switchChat(s.id);
       chatListEl.appendChild(item);
     });
